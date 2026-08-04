@@ -19,7 +19,7 @@ services:
     container_name: gatecore-server
     restart: always
     ports:
-      - "3001:3000"
+      - "3000:3000"
     environment:
       DATABASE_URL: "postgresql://gatecore:gatecore_password@gatecore-db:5432/gatecore?schema=public"
       PORT: 3000
