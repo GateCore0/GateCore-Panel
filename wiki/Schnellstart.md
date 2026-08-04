@@ -7,7 +7,7 @@ In dieser Anleitung startest du GateCore in wenigen Minuten.
 ## Voraussetzungen
 
 - Docker & Docker Compose installiert
-- Port `3001` frei
+- Port `3000` frei
 
 ---
 
@@ -30,7 +30,7 @@ Dies baut das Backend (Express.js) und das Frontend (React/Vite) in einem Multi-
 
 Öffne den Browser:
 
-👉 **http://localhost:3001**
+👉 **http://localhost:3000**
 
 ## Schritt 4: Anmelden
 

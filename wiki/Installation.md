@@ -42,8 +42,8 @@ docker logs -f gatecore-server
 
 | URL | Beschreibung |
 |-----|-------------|
-| http://localhost:3001 | Web-Interface |
-| http://localhost:3001/api/... | REST API |
+| http://localhost:3000 | Web-Interface |
+| http://localhost:3000/api/... | REST API |
 
 ---
 
@@ -63,7 +63,7 @@ docker logs -f gatecore-server
 
 | Service | Image | Port | Beschreibung |
 |---------|-------|------|--------------|
-| `gatecore-app` | Multi-Stage-Build (node:20-alpine) | `3001→3000` | Backend + statisches Frontend |
+| `gatecore-app` | Multi-Stage-Build (node:20-alpine) | `3000→3000` | Backend + statisches Frontend |
 | `gatecore-db` | `postgres:15-alpine` | intern `5432` | PostgreSQL-Datenbank |
 
 ### Wichtige Volume-Mounts des App-Containers
@@ -159,7 +159,7 @@ cd frontend && npm run build && cd ..
 
 Nach erfolgreichem Start:
 
-1. Öffne **http://localhost:3001** im Browser
+1. Öffne **http://localhost:3000** im Browser
 2. Melde dich mit `admin` / `admin` an
 3. Das **Dashboard** erscheint mit dem lokalen Docker-Host
 

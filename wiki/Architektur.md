@@ -121,7 +121,7 @@ Siehe auch: [Docker-Deployment](Docker-Deployment)
 
 | Service | Image | Port | Funktion |
 |---------|-------|------|----------|
-| `gatecore-app` | Multi-Stage-Build (node:20-alpine) | 3001→3000 | Backend + statisches Frontend |
+| `gatecore-app` | Multi-Stage-Build (node:20-alpine) | 3000→3000 | Backend + statisches Frontend |
 | `gatecore-db` | postgres:15-alpine | 5432 (intern) | PostgreSQL-Datenbank |
 
 ### Wichtige Mounts des App-Containers

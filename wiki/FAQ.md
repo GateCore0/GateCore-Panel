@@ -142,7 +142,7 @@ Aktuell ist 2FA nicht implementiert.
 
 1. Docker-Status prüfen: `docker compose ps`
 2. Logs ansehen: `docker logs -f gatecore-server`
-3. Port 3001 erreichbar? `curl http://localhost:3001`
+3. Port 3000 erreichbar? `curl http://localhost:3000`
 
 ### Die App ist langsam
 

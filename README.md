@@ -106,8 +106,8 @@ Die Anwendung ist erreichbar unter:
 
 | URL | Beschreibung |
 |-----|-------------|
-| http://localhost:3001 | Web-Interface |
-| http://localhost:3001/api/... | REST API |
+| http://localhost:3000 | Web-Interface |
+| http://localhost:3000/api/... | REST API |
 
 ### Standard-Login
 
@@ -124,7 +124,7 @@ Die Anwendung ist erreichbar unter:
 
 | Service | Image | Port | Beschreibung |
 |---------|-------|------|--------------|
-| `gatecore-server` | gatecore-gatecore-app | 3001→3000 | Backend + Frontend |
+| `gatecore-server` | gatecore-gatecore-app | 3000→3000 | Backend + Frontend |
 | `gatecore-postgres` | postgres:16-alpine | intern 5432 | PostgreSQL Datenbank |
 
 ---

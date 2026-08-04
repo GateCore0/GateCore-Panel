@@ -8,7 +8,7 @@ Dieses Dokument beschreibt das Docker-Deployment von GateCore, einschließlich d
 
 | Service | Container-Name | Image | Port | Zweck |
 |---------|---------------|-------|------|-------|
-| `gatecore-app` | `gatecore-server` | Multi-Stage-Build (`node:20-alpine`) | `3001→3000` | Backend + statisches Frontend |
+| `gatecore-app` | `gatecore-server` | Multi-Stage-Build (`node:20-alpine`) | `3000→3000` | Backend + statisches Frontend |
 | `gatecore-db` | `gatecore-postgres` | `postgres:15-alpine` | intern `5432` | PostgreSQL-Datenbank |
 
 ---

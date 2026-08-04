@@ -10,7 +10,7 @@ Hilfreiche Lösungen für häufige Probleme mit GateCore.
 
 | Symptom | Lösung |
 |---------|--------|
-| `port is already allocated` | Port 3001 ist bereits belegt. Anderen Port verwenden: `ports: "3002:3000"` |
+| `port is already allocated` | Port 3000 ist bereits belegt. Anderen Port verwenden: `ports: "3001:3000"` |
 | `Permission denied` auf Docker-Socket | Docker-User muss zur `docker`-Gruppe gehören oder Container mit Root ausführen |
 | `Cannot connect to the Docker daemon` | Docker-Daemon prüfen: `systemctl status docker` |
 
@@ -102,9 +102,9 @@ Compose-verwaltete Container können nicht über das Panel bearbeitet werden. Di
 
 ### Web-Shell verbindet nicht
 
-- WebSocket-Endpoint prüfen: `ws://<host>:3001/ws/docker/shell/<container>`
+- WebSocket-Endpoint prüfen: `ws://<host>:3000/ws/docker/shell/<container>`
 - Container muss laufen
-- Firewall: Port 3001 freigeben
+- Firewall: Port 3000 freigeben
 
 ---
 
@@ -172,7 +172,7 @@ docker compose up --build -d
 
 1. Browser-Konsole öffnen (F12) – Fehler prüfen
 2. Cache leeren (Ctrl+Shift+R)
-3. API erreichbar? `curl http://localhost:3001/api/auth/me`
+3. API erreichbar? `curl http://localhost:3000/api/auth/me`
 
 ### Sprach- oder Dark-Mode-Einstellungen
 
