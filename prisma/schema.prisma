@@ -1,0 +1,177 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+enum Role {
+  ADMIN
+  USER
+  VIEWER
+}
+
+enum HypervisorType {
+  DOCKER
+  PODMAN
+  LXC
+  VM_KVM
+  ALL_IN_ONE
+}
+
+enum StorageType {
+  ISO
+  DOCKER_IMAGE
+  LXC_TEMPLATE
+  PODMAN_IMAGE
+  DOCKER_COMPOSE
+  VM_DISK
+  DOCKER_VOLUME
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  email     String?
+  role      Role     @default(USER)
+  isLdap    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LdapConfig {
+  id             String   @id @default(uuid())
+  enabled        Boolean  @default(false)
+  url            String
+  bindDn         String
+  bindPassword   String
+  searchBase     String
+  userFilter     String   @default("(sAMAccountName={{username}})")
+  updatedAt      DateTime @updatedAt
+}
+
+model Host {
+  id           String          @id @default(uuid())
+  name         String
+  ip           String          @unique
+  port         Int             @default(22)
+  username     String          @default("root")
+  sshKeyPath   String?
+  osType       String          // debian, ubuntu, rocky, alma, fedora
+  capabilities HypervisorType[]
+  status       String          @default("OFFLINE")
+  isLocal      Boolean         @default(false)
+  dockerContainers DockerContainer[]
+  dockerComposeProjects DockerComposeProject[]
+  vms          VM[]
+  lxcContainers LXCContainer[]
+  podmanContainers PodmanContainer[]
+  storagePools StoragePool[]
+  zfsPools     ZFSPool[]
+  passthroughDevices HardwarePassthrough[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+model ClusterNode {
+  id        String   @id @default(uuid())
+  name      String
+  endpoint  String
+  apiKey    String   @unique
+  status    String   @default("DISCONNECTED")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StoragePool {
+  id          String      @id @default(uuid())
+  name        String
+  type        StorageType
+  path        String
+  hostId      String
+  host        Host        @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  createdAt   DateTime    @default(now())
+}
+
+model ZFSPool {
+  id          String   @id @default(uuid())
+  name        String
+  raidLevel   String   // stripe, mirror, raidz1, raidz2, raidz3
+  disks       String[]
+  hostId      String
+  host        Host     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
+
+model VM {
+  id          String   @id @default(uuid())
+  name        String
+  vcpus       Int
+  memoryMB    Int
+  diskSizeGB  Int
+  storagePath String
+  hostId      String
+  host        Host     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  status      String   @default("STOPPED")
+  createdAt   DateTime @default(now())
+}
+
+model LXCContainer {
+  id          String   @id @default(uuid())
+  name        String
+  template    String
+  memoryMB    Int
+  storagePath String
+  hostId      String
+  host        Host     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  status      String   @default("STOPPED")
+  createdAt   DateTime @default(now())
+}
+
+model PodmanContainer {
+  id          String   @id @default(uuid())
+  name        String
+  image       String
+  hostId      String
+  host        Host     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  status      String   @default("STOPPED")
+  createdAt   DateTime @default(now())
+}
+
+model DockerContainer {
+  id          String   @id @default(uuid())
+  name        String
+  image       String
+  status      String   @default("STOPPED")
+  volumeName  String?
+  mountPath   String?  @default("/data")
+  hostId      String?
+  host        Host?    @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+}
+
+model DockerComposeProject {
+  id          String   @id @default(uuid())
+  name        String
+  content     String
+  status      String   @default("STOPPED")
+  hostId      String?
+  host        Host?    @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+}
+
+model HardwarePassthrough {
+  id          String   @id @default(uuid())
+  type        String   // PCIE or USB
+  deviceId    String   // vendor:device or bus:device
+  description String
+  guestType   String   // VM, LXC, DOCKER, PODMAN
+  guestId     String
+  hostId      String
+  host        Host     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}

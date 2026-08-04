@@ -1,0 +1,38 @@
+services:
+  gatecore-db:
+    image: postgres:15-alpine
+    container_name: gatecore-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: gatecore
+      POSTGRES_PASSWORD: gatecore_password
+      POSTGRES_DB: gatecore
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  gatecore-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gatecore-server
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      DATABASE_URL: "postgresql://gatecore:gatecore_password@gatecore-db:5432/gatecore?schema=public"
+      PORT: 3000
+      JWT_SECRET: "gatecore-super-secret-key"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/gatecore:/etc/gatecore
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+      - /sys:/sys:ro
+    privileged: true
+    depends_on:
+      - gatecore-db
+
+volumes:
+  postgres_data:
