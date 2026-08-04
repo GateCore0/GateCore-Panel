@@ -22,8 +22,9 @@ FROM node:20-alpine3.20 AS backend-builder
 WORKDIR /app
 
 # Root-Abhängigkeiten inkl. devDependencies (für tsc)
+# --no-optional: cpu-features (SSH2-Beschleuniger) bricht unter QEMU-Emulation (arm64) mit SIGILL ab
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-optional
 
 # Prisma-Schema kopieren und Prisma-Client generieren
 COPY prisma ./prisma
@@ -70,8 +71,9 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Nur Produktions-Dependencies installieren
+# --no-optional: cpu-features (optionales natives Paket von ssh2) bricht unter QEMU-Emulation (arm64) mit exit 132 (SIGILL) ab
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --no-optional && npm cache clean --force
 
 # Prisma-Schema kopieren (für Laufzeit-Migrationen via start.sh)
 COPY prisma ./prisma
