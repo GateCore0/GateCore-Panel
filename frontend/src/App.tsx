@@ -5,7 +5,7 @@ import {
   Server, HardDrive, Box, Layers, Cpu, Shield, Users, Folder,
   Terminal, Sun, Moon, Globe, Plus, Trash2, Play, Square, Code, LogOut,
   X, RefreshCw, Edit, Save, Key, Download, Upload, ChevronRight, Eye, Monitor,
-  RotateCw, ScrollText, Usb, Activity
+  RotateCw, ScrollText, Usb, Activity, Copy
 } from 'lucide-react';
 
 type Language = string;
@@ -64,6 +64,16 @@ const translations = {
     addNode: 'Node Hinzufügen',
     endpoint: 'Endpoint',
     apiKey: 'API Key',
+    generateKey: 'API-Key generieren',
+    generatedKey: 'Generierter API-Key',
+    copyKey: 'Key kopieren',
+    keyCopied: 'Key kopiert!',
+    keyWarning: 'Speichere diesen Key sicher – er wird nur einmal angezeigt!',
+    revokeKey: 'Key widerrufen',
+    rotateKey: 'Key rotieren',
+    revoked: 'Widerrufen',
+    pending: 'Ausstehend',
+    expiresIn: 'Ablauf (Tage)',
     addVm: 'VM Erstellen',
     addLxc: 'LXC Erstellen',
     addPodman: 'Podman Erstellen',
@@ -186,6 +196,16 @@ const translations = {
     addNode: 'Add Node',
     endpoint: 'Endpoint',
     apiKey: 'API Key',
+    generateKey: 'Generate API Key',
+    generatedKey: 'Generated API Key',
+    copyKey: 'Copy key',
+    keyCopied: 'Key copied!',
+    keyWarning: 'Store this key securely – it will only be shown once!',
+    revokeKey: 'Revoke key',
+    rotateKey: 'Rotate key',
+    revoked: 'Revoked',
+    pending: 'Pending',
+    expiresIn: 'Expiry (days)',
     addVm: 'Create VM',
     addLxc: 'Create LXC',
     addPodman: 'Create Podman',
@@ -763,10 +783,17 @@ export default function App() {
           await api('/api/ldap/config', { method: 'POST', body: JSON.stringify(form) });
           showSuccess(t.success); loadUsers();
           break;
-        case 'cluster':
-          await api('/api/cluster/nodes', { method: 'POST', body: JSON.stringify(form) });
+        case 'cluster': {
+          const node = await api('/api/cluster/nodes', { method: 'POST', body: JSON.stringify(form) });
+          if (node.apiKey) {
+            setForm({ ...form, generatedKey: node.apiKey });
+            showSuccess(t.generatedKey);
+            loadCluster();
+            return; // Modal offen lassen, damit der Key angezeigt wird
+          }
           showSuccess(t.success); loadCluster();
           break;
+        }
       }
       setModal(null); setForm({});
     } catch (e: any) {
@@ -1652,9 +1679,15 @@ export default function App() {
                 <DataTable darkMode={darkMode} empty={t.noData} columns={[
                   { key: 'name', label: t.name },
                   { key: 'endpoint', label: t.endpoint },
-                  { key: 'apiKey', label: t.apiKey, render: (r: any) => <span className="font-mono text-xs">{r.apiKey?.substring(0, 12)}…</span> },
-                  { key: 'status', label: t.status, render: (r: any) => <StatusBadge status={r.status} /> },
-                  { key: 'actions', label: t.actions, render: (r: any) => <button onClick={() => doDelete(`/api/cluster/nodes/${r.id}`, loadCluster)} className="p-1.5 rounded hover:bg-red-500/20 text-red-400"><Trash2 className="w-3.5 h-3.5" /></button> },
+                  { key: 'apiKey', label: t.apiKey, render: (r: any) => <span className={`font-mono text-xs ${r.revoked ? 'text-red-400 line-through' : ''}`}>{r.apiKeyPreview || '—'}</span> },
+                  { key: 'status', label: t.status, render: (r: any) => <StatusBadge status={r.revoked ? t.revoked : r.status} /> },
+                  { key: 'actions', label: t.actions, render: (r: any) => (
+                    <div className="flex gap-1">
+                      <button onClick={async () => { if (!confirm(t.confirm)) return; await api(`/api/cluster/nodes/${r.id}/rotate-key`, { method: 'POST' }).then((d: any) => { alert(`${t.generatedKey}:\n\n${d.apiKey}\n\n${t.keyWarning}`); loadCluster(); }).catch((e: any) => showError(e.message)); }} className="p-1.5 rounded hover:bg-gate-orange/20 text-gate-orange" title={t.rotateKey}><RotateCw className="w-3.5 h-3.5" /></button>
+                      <button onClick={async () => { if (!confirm(t.confirm)) return; await api(`/api/cluster/nodes/${r.id}/revoke`, { method: 'POST' }).then(() => { showSuccess(t.success); loadCluster(); }).catch((e: any) => showError(e.message)); }} className="p-1.5 rounded hover:bg-amber-500/20 text-amber-400" title={t.revokeKey}><Key className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => doDelete(`/api/cluster/nodes/${r.id}`, loadCluster)} className="p-1.5 rounded hover:bg-red-500/20 text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                  )},
                 ]} rows={clusterNodes} />
               </div>
             </div>
@@ -2138,8 +2171,22 @@ export default function App() {
       <Modal open={modal === 'cluster'} onClose={() => setModal(null)} title={t.addNode} darkMode={darkMode}>
         <Input label={t.name} darkMode={darkMode} value={form.name || ''} onChange={(e: any) => setF('name', e.target.value)} />
         <Input label={t.endpoint} darkMode={darkMode} value={form.endpoint || ''} onChange={(e: any) => setF('endpoint', e.target.value)} placeholder="https://node2.example.com:3000" />
-        <Input label={t.apiKey} darkMode={darkMode} value={form.apiKey || ''} onChange={(e: any) => setF('apiKey', e.target.value)} placeholder="gc-api-key-..." />
-        <div className="flex gap-2 mt-4"><Btn onClick={submitForm} disabled={loading}>{loading ? t.loading : t.create}</Btn><Btn onClick={() => setModal(null)} variant="ghost">{t.cancel}</Btn></div>
+        <Input label={t.expiresIn} darkMode={darkMode} type="number" value={form.expiresInDays || ''} onChange={(e: any) => setF('expiresInDays', e.target.value)} placeholder="30 = 30 Tage / leer = unbegrenzt" />
+        <p className="text-xs text-gray-500 mb-3">{t.keyWarning}</p>
+        {form.generatedKey && (
+          <div className="mb-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
+            <p className="text-xs font-semibold text-emerald-400 mb-1">{t.generatedKey}:</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 font-mono text-xs break-all">{form.generatedKey}</code>
+              <button onClick={() => { navigator.clipboard.writeText(form.generatedKey); showSuccess(t.keyCopied); }} className="p-1.5 rounded hover:bg-emerald-500/20 text-emerald-400" title={t.copyKey}><Copy className="w-3.5 h-3.5" /></button>
+            </div>
+            <p className="text-xs text-amber-400 mt-2">{t.keyWarning}</p>
+          </div>
+        )}
+        <div className="flex gap-2 mt-4">
+          <Btn onClick={submitForm} disabled={loading}>{loading ? t.loading : t.create}</Btn>
+          <Btn onClick={() => setModal(null)} variant="ghost">{t.cancel}</Btn>
+        </div>
       </Modal>
 
       {/* Edit Container (Ports & Volumes) */}

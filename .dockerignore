@@ -1,9 +1,55 @@
+# Node
 node_modules
-frontend/node_modules
-frontend/dist
+**/node_modules
+npm-debug.log*
+yarn-error.log*
+package-lock.json.tmp
+
+# Build-Artefakte
 dist
+frontend/dist
+build
+*.tsbuildinfo
+
+# Umgebung & Secrets
+.env
+.env.*
+!.env.example
+
+# Git
 .git
 .gitignore
+.gitattributes
+
+# GitHub
+.github
+
+# IDE & OS
+.vscode
+.vscode-server
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Logs
 *.log
-.env
+logs/
+
+# Tests & Coverage
+coverage
+.nyc_output
+
+# Sonstiges
+CHANGELOG
+LICENSE
+README.md
+gati.svg
 .cache
+.vercel

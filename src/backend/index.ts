@@ -13,6 +13,7 @@ import { DockerService } from './services/dockerService';
 import { FileManagerService } from './services/fileManagerService';
 import { LDAPService } from './services/ldapService';
 import { MonitoringService } from './services/monitoringService';
+import { ApiKeyService } from './services/apiKeyService';
 
 const { app } = expressWs(express());
 const prisma = new PrismaClient();
@@ -851,7 +852,69 @@ app.delete('/api/files/host', async (req, res) => {
   }
 });
 
-// --- CLUSTER DELETE ---
+// --- CLUSTER NODES & API KEYS (sichere API-Key-Generierung) ---
+
+// Middleware: Authentifizierung eines Cluster-Nodes per API-Key
+const authenticateClusterKey = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers['authorization'];
+  const apiKey = (authHeader && authHeader.split(' ')[1]) || (req.query.apiKey as string) || (req.body?.apiKey as string);
+  if (!apiKey) return res.status(401).json({ error: 'API key required' });
+
+  const node = await ApiKeyService.validateKey(apiKey, prisma);
+  if (!node) return res.status(403).json({ error: 'Invalid or revoked API key' });
+
+  (req as any).clusterNode = node;
+  next();
+};
+
+// Alle Cluster-Nodes auflisten (ohne Klartext-Keys – nur Preview)
+app.get('/api/cluster/nodes', async (req, res) => {
+  const nodes = await prisma.clusterNode.findMany({
+    select: {
+      id: true,
+      name: true,
+      endpoint: true,
+      apiKeyPreview: true,
+      status: true,
+      description: true,
+      lastUsedAt: true,
+      expiresAt: true,
+      revoked: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+  res.json(nodes);
+});
+
+// Neuen Cluster-Node mit automatisch generiertem API-Key anlegen
+app.post('/api/cluster/nodes', async (req, res) => {
+  const { name, endpoint, description, expiresInDays } = req.body;
+  if (!name || !endpoint) return res.status(400).json({ error: 'name and endpoint are required' });
+
+  const { plainTextKey, keyHash, preview } = ApiKeyService.generate();
+
+  const node = await prisma.clusterNode.create({
+    data: {
+      name,
+      endpoint,
+      apiKeyHash: keyHash,
+      apiKeyPreview: preview,
+      status: 'PENDING',
+      description: description || null,
+      expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000) : null,
+    },
+  });
+
+  // Klartext-Key wird NUR hier einmalig zurückgegeben
+  res.json({
+    ...node,
+    apiKey: plainTextKey, // Einmalige Anzeige!
+    warning: 'Store this key securely. It will only be shown once.',
+  });
+});
+
+// Cluster-Node löschen
 app.delete('/api/cluster/nodes/:id', async (req, res) => {
   try {
     await prisma.clusterNode.delete({ where: { id: req.params.id } });
@@ -859,6 +922,72 @@ app.delete('/api/cluster/nodes/:id', async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// API-Key widerrufen (revoke)
+app.post('/api/cluster/nodes/:id/revoke', async (req, res) => {
+  try {
+    await prisma.clusterNode.update({
+      where: { id: req.params.id },
+      data: { revoked: true, status: 'DISCONNECTED' },
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Neuen API-Key für einen bestehenden Node generieren (Rotation)
+app.post('/api/cluster/nodes/:id/rotate-key', async (req, res) => {
+  try {
+    const node = await prisma.clusterNode.findUnique({ where: { id: req.params.id } });
+    if (!node) return res.status(404).json({ error: 'Node not found' });
+
+    const { plainTextKey, keyHash, preview } = ApiKeyService.generate();
+
+    await prisma.clusterNode.update({
+      where: { id: node.id },
+      data: { apiKeyHash: keyHash, apiKeyPreview: preview, revoked: false, status: 'PENDING' },
+    });
+
+    res.json({
+      success: true,
+      apiKey: plainTextKey, // Einmalige Anzeige
+      warning: 'Store this key securely. It will only be shown once.',
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- CLUSTER REGISTRIERUNG & HEARTBEAT (für Worker-Nodes) ---
+
+// Worker-Node registriert sich selbst mit dem API-Key
+app.post('/api/cluster/register', authenticateClusterKey, async (req, res) => {
+  const clusterNode = (req as any).clusterNode;
+  await prisma.clusterNode.update({
+    where: { id: clusterNode.id },
+    data: { status: 'CONNECTED', lastUsedAt: new Date() },
+  });
+  res.json({ success: true, nodeId: clusterNode.id, name: clusterNode.name });
+});
+
+// Heartbeat: Worker-Node meldet sich regelmäßig (hält Status "CONNECTED")
+app.post('/api/cluster/heartbeat', authenticateClusterKey, async (req, res) => {
+  const clusterNode = (req as any).clusterNode;
+  await prisma.clusterNode.update({
+    where: { id: clusterNode.id },
+    data: { status: 'CONNECTED', lastUsedAt: new Date() },
+  });
+  res.json({ success: true, timestamp: new Date().toISOString() });
+});
+
+// Cluster-Health (kann mit API-Key abgefragt werden)
+app.get('/api/cluster/health', async (req, res) => {
+  const nodes = await prisma.clusterNode.findMany({
+    select: { id: true, name: true, status: true, lastUsedAt: true, endpoint: true },
+  });
+  res.json({ status: 'ok', nodes });
 });
 
 // --- TEMPLATES JSON API ---
@@ -871,19 +1000,6 @@ app.get('/api/templates', (req, res) => {
   res.json({ lxcTemplates: [], isoImages: [] });
 });
 
-// --- CLUSTER NODES & API KEYS ---
-app.get('/api/cluster/nodes', async (req, res) => {
-  const nodes = await prisma.clusterNode.findMany();
-  res.json(nodes);
-});
-
-app.post('/api/cluster/nodes', async (req, res) => {
-  const { name, endpoint, apiKey } = req.body;
-  const node = await prisma.clusterNode.create({
-    data: { name, endpoint, apiKey, status: 'CONNECTED' },
-  });
-  res.json(node);
-});
 
 // --- FILE MANAGER API ---
 app.get('/api/files/host', async (req, res) => {

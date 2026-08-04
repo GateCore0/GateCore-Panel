@@ -5,14 +5,22 @@ services:
     restart: always
     environment:
       POSTGRES_USER: gatecore
-      POSTGRES_PASSWORD: gatecore_password
+      POSTGRES_PASSWORD: &db_password gatecore_password
       POSTGRES_DB: gatecore
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gatecore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   gatecore-app:
+    # GHCR-Image (von GitHub Actions gebaut & gepusht)
+    # Für lokale Builds: `docker compose --env-file .env up -d --build`
+    image: ghcr.io/gatecore0/gatecore-panel:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -21,9 +29,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: "postgresql://gatecore:gatecore_password@gatecore-db:5432/gatecore?schema=public"
+      DATABASE_URL: "postgresql://gatecore:${GATECORE_DB_PASSWORD:-gatecore_password}@gatecore-db:5432/gatecore?schema=public"
       PORT: 3000
-      JWT_SECRET: "gatecore-super-secret-key"
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /etc/gatecore:/etc/gatecore
@@ -32,7 +43,8 @@ services:
       - /sys:/sys:ro
     privileged: true
     depends_on:
-      - gatecore-db
+      gatecore-db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
