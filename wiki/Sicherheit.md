@@ -95,7 +95,7 @@ services:
   gatecore-app:
     # Statt 0.0.0.0 nur auf localhost binden, falls Reverse-Proxy genutzt wird
     ports:
-      - "127.0.0.1:3001:3000"
+      - "127.0.0.1:3000:3000"
 ```
 
 ### Reverse-Proxy mit HTTPS (Beispiel Caddy)
@@ -103,7 +103,7 @@ services:
 ```yaml
 # Caddyfile
 gatecore.example.com {
-    reverse_proxy 127.0.0.1:3001
+    reverse_proxy 127.0.0.1:3000
 }
 ```
 

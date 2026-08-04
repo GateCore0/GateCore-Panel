@@ -44,7 +44,7 @@ cd GateCore
 docker compose up --build -d
 ```
 
-Die Anwendung ist danach erreichbar unter: **http://localhost:3001**
+Die Anwendung ist danach erreichbar unter: **http://localhost:3000**
 
 | Login | Wert |
 |-------|------|

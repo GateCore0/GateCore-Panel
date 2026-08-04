@@ -530,7 +530,7 @@ Fügt einen Cluster-Node hinzu.
 ```json
 {
   "name": "Remote-Node",
-  "endpoint": "http://remote-node:3001",
+  "endpoint": "http://remote-node:3000",
   "apiKey": "api-key"
 }
 ```
@@ -575,7 +575,7 @@ Listet Docker-Container eines bestimmten Hosts auf (lokal via Socket, remote per
 Interaktive Shell in einem Docker-Container.
 
 ```
-WebSocket → wss://host:3001/ws/docker/shell/mein-container
+WebSocket → wss://host:3000/ws/docker/shell/mein-container
 
 Client → { "type": "input", "data": "ls -la\n" }
 Server → { "type": "output", "data": "total 16\n..." }

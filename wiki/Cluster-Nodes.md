@@ -36,7 +36,7 @@ Jeder GateCore-Server stellt seinen eigenen API-Key bereit (in den Node-Einstell
 curl -X POST http://<node-url>/api/cluster/nodes/connect \
   -H "Content-Type: application/json" \
   -H "x-api-key: <API_KEY>" \
-  -d '{"name":"My-Node","url":"http://my-node:3001"}'
+  -d '{"name":"My-Node","url":"http://my-node:3000"}'
 ```
 
 ---
