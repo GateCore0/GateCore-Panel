@@ -12,6 +12,7 @@ import { HypervisorService } from './services/hypervisorService';
 import { DockerService } from './services/dockerService';
 import { FileManagerService } from './services/fileManagerService';
 import { LDAPService } from './services/ldapService';
+import { MonitoringService } from './services/monitoringService';
 
 const { app } = expressWs(express());
 const prisma = new PrismaClient();
@@ -482,6 +483,36 @@ app.post('/api/podman', async (req, res) => {
   const { hostId, name, image } = req.body;
   const podman = await HypervisorService.createPodmanContainer(hostId, name, image);
   res.json(podman);
+});
+
+// --- MONITORING ---
+app.get('/api/hosts/:id/metrics', async (req, res) => {
+  try {
+    const metrics = await MonitoringService.getMetrics(req.params.id);
+    res.json(metrics);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/hosts/:id/processes', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const processes = await MonitoringService.getTopProcesses(req.params.id, limit);
+    res.json(processes);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/hosts/:id/metrics/history', async (req, res) => {
+  try {
+    const minutes = parseInt(req.query.minutes as string) || 60;
+    const history = await MonitoringService.getMetricHistory(req.params.id, minutes);
+    res.json(history);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // --- STORAGE & ZFS & DISK ---
@@ -957,4 +988,19 @@ app.listen(PORT, async () => {
   await ensureLocalHost();
   await seedDefaultUser();
   console.log(`GateCore Server running on port ${PORT}`);
+
+  // --- MONITORING: Metrik-Snapshots alle 60 Sekunden speichern ---
+  const storeAllSnapshots = async () => {
+    try {
+      const hosts = await prisma.host.findMany({ select: { id: true } });
+      for (const h of hosts) {
+        await MonitoringService.storeMetricSnapshot(h.id);
+      }
+    } catch (err) {
+      console.error('Monitoring snapshot error:', err);
+    }
+  };
+
+  storeAllSnapshots();
+  setInterval(storeAllSnapshots, 60 * 1000);
 });

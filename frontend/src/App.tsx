@@ -4,11 +4,11 @@ import {
   Server, HardDrive, Box, Layers, Cpu, Shield, Users, Folder,
   Terminal, Sun, Moon, Globe, Plus, Trash2, Play, Square, Code, LogOut,
   X, RefreshCw, Edit, Save, Key, Download, Upload, ChevronRight, Eye, Monitor,
-  RotateCw, ScrollText, Usb
+  RotateCw, ScrollText, Usb, Activity
 } from 'lucide-react';
 
 type Language = string;
-type ActiveTab = 'dashboard' | 'docker' | 'hypervisor' | 'vms' | 'podman' | 'storage' | 'passthrough' | 'files' | 'users' | 'cluster';
+type ActiveTab = 'dashboard' | 'docker' | 'hypervisor' | 'vms' | 'podman' | 'storage' | 'passthrough' | 'files' | 'users' | 'cluster' | 'monitoring';
 
 const translations = {
   de: {
@@ -23,6 +23,7 @@ const translations = {
     files: 'Dateiverwaltung',
     users: 'Benutzer & LDAP',
     cluster: 'Cluster Nodes',
+    monitoring: 'Monitoring',
     addHost: 'Hypervisor Hinzufügen',
     addDocker: 'Container Erstellen',
     createZfs: 'ZFS Pool Erstellen',
@@ -144,6 +145,7 @@ const translations = {
     files: 'File Manager',
     users: 'Users & LDAP',
     cluster: 'Cluster Nodes',
+    monitoring: 'Monitoring',
     addHost: 'Add Hypervisor',
     addDocker: 'Create Container',
     createZfs: 'Create ZFS Pool',
@@ -500,6 +502,10 @@ export default function App() {
   const [editImage, setEditImage] = useState('');
   const [editPorts, setEditPorts] = useState<{ host: string; container: string; protocol: string; published: boolean }[]>([]);
   const [editVolumes, setEditVolumes] = useState<{ host: string; container: string; mode: string }[]>([]);
+  const [monitorHost, setMonitorHost] = useState('');
+  const [monitorMetrics, setMonitorMetrics] = useState<any>(null);
+  const [monitorProcesses, setMonitorProcesses] = useState<any[]>([]);
+  const [monitorHistory, setMonitorHistory] = useState<any[]>([]);
 
   // Modal states
   const [modal, setModal] = useState<string | null>(null);
@@ -660,6 +666,19 @@ export default function App() {
     } catch (e: any) { showError(e.message); }
   }, []);
 
+  const loadMonitoring = useCallback(async (hostId: string) => {
+    try {
+      const [m, p, h] = await Promise.all([
+        api(`/api/hosts/${hostId}/metrics`),
+        api(`/api/hosts/${hostId}/processes?limit=10`),
+        api(`/api/hosts/${hostId}/metrics/history?minutes=60`),
+      ]);
+      setMonitorMetrics(m);
+      setMonitorProcesses(p);
+      setMonitorHistory(h);
+    } catch (e: any) { showError(e.message); }
+  }, []);
+
   const loadDashboard = useCallback(async () => {
     await Promise.all([loadDocker(), loadHosts(), loadStorage(), loadCluster()]);
   }, [loadDocker, loadHosts, loadStorage, loadCluster]);
@@ -678,6 +697,7 @@ export default function App() {
       case 'files': loadFiles('/'); break;
       case 'users': loadUsers(); break;
       case 'cluster': loadCluster(); break;
+      case 'monitoring': loadHosts(); break;
     }
   }, [activeTab, token]);
 
@@ -1033,6 +1053,7 @@ export default function App() {
               { id: 'files', label: t.files, icon: Folder },
               { id: 'users', label: t.users, icon: Users },
               { id: 'cluster', label: t.cluster, icon: Shield },
+              { id: 'monitoring', label: t.monitoring, icon: Activity },
             ].map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -1077,6 +1098,7 @@ export default function App() {
               files: t.files,
               users: t.users,
               cluster: t.cluster,
+              monitoring: t.monitoring,
             }[activeTab]}
           </h2>
           <div className="flex items-center gap-4">
@@ -1634,6 +1656,95 @@ export default function App() {
                   { key: 'actions', label: t.actions, render: (r: any) => <button onClick={() => doDelete(`/api/cluster/nodes/${r.id}`, loadCluster)} className="p-1.5 rounded hover:bg-red-500/20 text-red-400"><Trash2 className="w-3.5 h-3.5" /></button> },
                 ]} rows={clusterNodes} />
               </div>
+            </div>
+          )}
+
+          {/* ===== MONITORING ===== */}
+          {activeTab === 'monitoring' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center flex-wrap gap-2">
+                <h3 className="text-lg font-semibold">{t.monitoring}</h3>
+                <div className="flex gap-2">
+                  <select
+                    value={monitorHost}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setMonitorHost(v);
+                      if (v) loadMonitoring(v);
+                    }}
+                    className={`px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-gate-orange ${
+                      darkMode ? 'bg-slate-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                  >
+                    <option value="">— {t.selectHost} —</option>
+                    {hosts.map((h) => <option key={h.id} value={h.id}>{h.name} ({h.ip})</option>)}
+                  </select>
+                  <Btn onClick={() => monitorHost && loadMonitoring(monitorHost)} variant="ghost"><RefreshCw className="w-4 h-4" /></Btn>
+                </div>
+              </div>
+
+              {!monitorHost && (
+                <div className={cardClass}>
+                  <p className="text-sm text-gray-500 text-center py-8">
+                    {lang === 'de' ? 'Bitte zuerst einen Host auswählen.' : 'Please select a host first.'}
+                  </p>
+                </div>
+              )}
+
+              {monitorHost && monitorMetrics && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {[
+                      { title: 'CPU', value: `${monitorMetrics.cpu}%`, icon: Cpu, color: 'from-orange-500 to-amber-500' },
+                      { title: 'RAM', value: `${monitorMetrics.ram.used} / ${monitorMetrics.ram.total}`, icon: Box, color: 'from-purple-500 to-indigo-500' },
+                      { title: 'Disk', value: `${monitorMetrics.disk.used} / ${monitorMetrics.disk.total}`, icon: HardDrive, color: 'from-emerald-500 to-teal-500' },
+                      { title: 'Network', value: `▼ ${monitorMetrics.network.rx} ▲ ${monitorMetrics.network.tx}`, icon: Activity, color: 'from-pink-500 to-rose-500' },
+                    ].map((card, i) => {
+                      const CardIcon = card.icon;
+                      return (
+                        <div key={i} className={cardClass}>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-xs text-gray-400 font-medium">{card.title}</p>
+                              <p className="text-lg font-bold mt-1">{card.value}</p>
+                            </div>
+                            <div className={`p-3 rounded-lg bg-gradient-to-tr ${card.color} text-white`}><CardIcon className="w-5 h-5" /></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className={cardClass}>
+                      <h4 className="font-semibold mb-3">{lang === 'de' ? 'Top Prozesse' : 'Top Processes'}</h4>
+                      <DataTable darkMode={darkMode} empty={t.noData} columns={[
+                        { key: 'pid', label: 'PID', render: (r: any) => <span className="font-mono text-xs">{r.pid}</span> },
+                        { key: 'name', label: t.name },
+                        { key: 'cpu', label: 'CPU %', render: (r: any) => `${r.cpu}%` },
+                        { key: 'mem', label: 'MEM %', render: (r: any) => `${r.mem}%` },
+                      ]} rows={monitorProcesses} />
+                    </div>
+                    <div className={cardClass}>
+                      <h4 className="font-semibold mb-3">{lang === 'de' ? 'CPU-Verlauf (60 Min)' : 'CPU History (60 min)'}</h4>
+                      <div className="space-y-2">
+                        {monitorHistory.slice(-30).map((h, i) => (
+                          <div key={h.id || i}>
+                            <div className="flex justify-between text-xs text-gray-400 mb-1">
+                              <span className="font-mono">{new Date(h.createdAt).toLocaleTimeString()}</span>
+                              <span>{h.cpuUsage}%</span>
+                            </div>
+                            <div className="w-full h-2 rounded-full bg-gray-800 overflow-hidden">
+                              <div className="h-full rounded-full bg-gradient-to-r from-gate-orange to-gate-purple"
+                                style={{ width: `${Math.min(h.cpuUsage, 100)}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
