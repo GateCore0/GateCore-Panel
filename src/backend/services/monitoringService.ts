@@ -85,33 +85,89 @@ export class MonitoringService {
   }
 
   /**
-   * Liest Disk-Informationen aus `df -h` (filtert tmpfs/snap/overlay).
+   * Liest Disk-Informationen: Gruppiert nach physischer Festplatte
+   * (nicht pro Mount-Pfad), damit z.B. 5 Pfade auf 1 Festplatte = 1 Eintrag.
+   * Nutzt `lsblk` zur Gerätezuordnung und `df` zur Auslastung.
    */
   private static async getDisks(host: any): Promise<{ mount: string; totalGB: number; usedGB: number; freeGB: number; usedPercent: number }[]> {
-    const out = await this.execute(
+    // Schritt 1: Hole Zuordnung Gerät → Mount mit lsblk (JSON)
+    let deviceMap: Record<string, string> = {};
+    try {
+      const lsblkOut = await this.execute(
+        host,
+        `lsblk -J -o NAME,TYPE,FSTYPE,MOUNTPOINT,SIZE 2>/dev/null`
+      );
+      const lsblk = JSON.parse(lsblkOut);
+      const walk = (devs: any[]) => {
+        for (const d of devs) {
+          if (d.children && d.children.length > 0) {
+            walk(d.children);
+          }
+          if (d.mountpoint && d.name) {
+            deviceMap[d.mountpoint] = `/dev/${d.name}`;
+          }
+        }
+      };
+      walk(lsblk.blockdevices || []);
+    } catch {
+      // lsblk-json nicht verfügbar → Fallback
+    }
+
+    // Schritt 2: df auswerten und nach Gerät gruppieren
+    const dfOut = await this.execute(
       host,
-      `df -hP | awk 'NR>1 {print $1"|"$2"|"$3"|"$4"|"$5"|"$6}' | grep -vE '^(tmpfs|devtmpfs|overlay|shm|udev|snap|loop)'`
+      `df -hP | awk 'NR>1 {print $1"|"$2"|"$3"|"$4"|"$5"|"$6}' | grep -vE '^(tmpfs|devtmpfs|overlay|shm|udev|snap|loop|none)'`
     );
-    return out
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line: string) => {
-        const [, total, used, free, pct, mount] = line.split('|');
-        const toGB = (val: string) => {
-          if (val.endsWith('G')) return parseFloat(val.slice(0, -1));
-          if (val.endsWith('T')) return parseFloat(val.slice(0, -1)) * 1024;
-          if (val.endsWith('M')) return parseFloat(val.slice(0, -1)) / 1024;
-          return parseFloat(val) || 0;
-        };
-        return {
-          mount: mount || '/',
-          totalGB: toGB(total),
-          usedGB: toGB(used),
-          freeGB: toGB(free),
-          usedPercent: parseInt((pct || '0').replace('%', '')) || 0,
-        };
-      });
+    const toGB = (val: string) => {
+      if (val.endsWith('T')) return parseFloat(val.slice(0, -1)) * 1024;
+      if (val.endsWith('G')) return parseFloat(val.slice(0, -1));
+      if (val.endsWith('M')) return parseFloat(val.slice(0, -1)) / 1024;
+      return parseFloat(val) || 0;
+    };
+
+    // Map: deviceName → { mount, totalGB, usedGB, freeGB, usedPercent, partitions }
+    const diskMap = new Map<string, { mounts: string[]; totalGB: number; usedGB: number; freeGB: number; partCount: number }>();
+
+    for (const line of dfOut.trim().split('\n').filter(Boolean)) {
+      const [device, total, used, free, pct, mount] = line.split('|');
+      // Bestimme physisches Gerät
+      const physicalDevice = deviceMap[mount] || device;
+
+      const entry = diskMap.get(physicalDevice);
+      const tGB = toGB(total);
+      const uGB = toGB(used);
+      const fGB = toGB(free);
+
+      if (entry) {
+        // Nur hinzufügen wenn diese Partition noch nicht gezählt wurde
+        // (df zeigt oft dieselbe Größe für übergeordnetes Gerät + Partition)
+        if (entry.mounts.includes(mount)) continue;
+        entry.mounts.push(mount);
+        // Für Partitions-Summen: nur additive Zählung vermeiden
+        // Wir nehmen den MAX von total (nicht SUM), da df für ein Device die gleiche Größe zeigt
+        entry.totalGB = Math.max(entry.totalGB, tGB);
+        entry.usedGB = Math.max(entry.usedGB, uGB);
+        entry.freeGB = Math.min(entry.freeGB, fGB);
+        entry.partCount++;
+      } else {
+        diskMap.set(physicalDevice, {
+          mounts: [mount],
+          totalGB: tGB,
+          usedGB: uGB,
+          freeGB: fGB,
+          partCount: 1,
+        });
+      }
+    }
+
+    // Ergebnis als Array
+    return Array.from(diskMap.entries()).map(([device, info]) => ({
+      mount: device + ' → ' + info.mounts.join(', '),
+      totalGB: Math.round(info.totalGB * 100) / 100,
+      usedGB: Math.round(info.usedGB * 100) / 100,
+      freeGB: Math.round(info.freeGB * 100) / 100,
+      usedPercent: info.totalGB > 0 ? Math.round((info.usedGB / info.totalGB) * 1000) / 10 : 0,
+    }));
   }
 
   /**
@@ -244,12 +300,19 @@ export class MonitoringService {
 
   /**
    * Liefert den Metrik-Verlauf eines Hosts (aufsteigend nach Zeit).
+   * BigInt-Felder (networkRx/networkTx) werden zu Number konvertiert,
+   * da JSON.stringify BigInt nicht serialisieren kann.
    */
   public static async getMetricHistory(hostId: string, minutes: number = 60): Promise<any[]> {
     const since = new Date(Date.now() - minutes * 60 * 1000);
-    return await prisma.systemMetricHistory.findMany({
+    const rows = await prisma.systemMetricHistory.findMany({
       where: { hostId, createdAt: { gte: since } },
       orderBy: { createdAt: 'asc' },
     });
+    return rows.map((r) => ({
+      ...r,
+      networkRx: Number(r.networkRx),
+      networkTx: Number(r.networkTx),
+    }));
   }
 }

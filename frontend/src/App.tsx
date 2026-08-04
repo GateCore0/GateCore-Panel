@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import gatiLogo from './assets/gati.svg';
 import { LANGUAGES, translations as globalTranslations, getInitialLanguage, persistLanguage } from './i18n';
 import {
   Server, HardDrive, Box, Layers, Cpu, Shield, Users, Folder,
@@ -1005,7 +1006,7 @@ export default function App() {
       <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gate-darkBg text-white' : 'bg-gray-100 text-gray-900'}`}>
         <div className={`w-full max-w-md p-8 rounded-2xl border shadow-2xl ${darkMode ? 'bg-gate-darkCard border-gray-800' : 'bg-white border-gray-200'}`}>
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-gate-orange to-gate-purple flex items-center justify-center font-extrabold text-white text-3xl shadow-lg mb-3">GC</div>
+            <img src={gatiLogo} alt="GateCore Logo" className="w-20 h-20 mb-3" />
             <h1 className="text-2xl font-extrabold bg-gradient-to-r from-gate-orange to-gate-purple bg-clip-text text-transparent">GateCore Manager</h1>
             <p className="text-sm text-gray-400 mt-1">Enterprise Infrastructure Platform</p>
           </div>
@@ -1035,7 +1036,7 @@ export default function App() {
       <aside className={`w-64 border-r flex flex-col justify-between shrink-0 ${darkMode ? 'bg-gate-darkSidebar border-gray-800' : 'bg-white border-gray-200'}`}>
         <div>
           <div className="p-4 border-b border-gray-800 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-tr from-gate-orange to-gate-purple flex items-center justify-center font-bold text-white text-xl shadow-lg">GC</div>
+            <img src={gatiLogo} alt="GateCore Logo" className="w-10 h-10 rounded-lg" />
             <div>
               <h1 className="font-bold text-lg leading-none bg-gradient-to-r from-gate-orange to-gate-purple bg-clip-text text-transparent">GateCore</h1>
               <span className="text-xs text-gray-400">Enterprise v1.0</span>
@@ -1691,60 +1692,122 @@ export default function App() {
                 </div>
               )}
 
-              {monitorHost && monitorMetrics && (
+              {monitorHost && monitorMetrics && (() => {
+                const fmtBytes = (b: number) => {
+                  if (b >= 1e12) return `${(b / 1e12).toFixed(1)} TB`;
+                  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
+                  if (b >= 1e6) return `${(b / 1e6).toFixed(1)} MB`;
+                  if (b >= 1e3) return `${(b / 1e3).toFixed(1)} KB`;
+                  return `${b} B`;
+                };
+                const cpuPct = monitorMetrics.cpu?.usagePercent ?? 0;
+                const ramUsed = monitorMetrics.memory?.usedGB ?? 0;
+                const ramTotal = monitorMetrics.memory?.totalGB ?? 0;
+                const ramPct = monitorMetrics.memory?.usedPercent ?? 0;
+                const disks = monitorMetrics.disks || [];
+                const diskUsed = disks.reduce((a: number, d: any) => a + (d.usedGB || 0), 0);
+                const diskTotal = disks.reduce((a: number, d: any) => a + (d.totalGB || 0), 0);
+                const netIfaces = monitorMetrics.network || [];
+                const netRx = netIfaces.reduce((a: number, n: any) => a + (n.rxBytes || 0), 0);
+                const netTx = netIfaces.reduce((a: number, n: any) => a + (n.txBytes || 0), 0);
+                const uptime = monitorMetrics.uptime || {};
+                const uptimeStr = `${uptime.days || 0}d ${uptime.hours || 0}h ${uptime.minutes || 0}m`;
+
+                return (
                 <>
+                  {/* Host-Info */}
+                  <div className={`${cardClass} flex flex-wrap items-center gap-4 text-sm`}>
+                    <span className="font-semibold">{monitorMetrics.hostname || '—'}</span>
+                    <span className="text-gray-400">{monitorMetrics.os?.name || ''}</span>
+                    <span className="text-gray-500">Uptime: {uptimeStr}</span>
+                    <span className="text-gray-500">{monitorMetrics.cpu?.cores || '?'} Cores · Load: {(monitorMetrics.cpu?.loadAvg || []).map((l: number) => l.toFixed(2)).join(' / ')}</span>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {[
-                      { title: 'CPU', value: `${monitorMetrics.cpu}%`, icon: Cpu, color: 'from-orange-500 to-amber-500' },
-                      { title: 'RAM', value: `${monitorMetrics.ram.used} / ${monitorMetrics.ram.total}`, icon: Box, color: 'from-purple-500 to-indigo-500' },
-                      { title: 'Disk', value: `${monitorMetrics.disk.used} / ${monitorMetrics.disk.total}`, icon: HardDrive, color: 'from-emerald-500 to-teal-500' },
-                      { title: 'Network', value: `▼ ${monitorMetrics.network.rx} ▲ ${monitorMetrics.network.tx}`, icon: Activity, color: 'from-pink-500 to-rose-500' },
+                      { title: 'CPU', value: `${cpuPct}%`, sub: `${monitorMetrics.cpu?.cores || '?'} Cores`, icon: Cpu, color: 'from-orange-500 to-amber-500', pct: cpuPct },
+                      { title: 'RAM', value: `${ramUsed} / ${ramTotal} GB`, sub: `${ramPct}%`, icon: Box, color: 'from-purple-500 to-indigo-500', pct: ramPct },
+                      { title: 'Disk', value: `${diskUsed.toFixed(1)} / ${diskTotal.toFixed(1)} GB`, sub: diskTotal > 0 ? `${Math.round((diskUsed / diskTotal) * 100)}%` : '0%', icon: HardDrive, color: 'from-emerald-500 to-teal-500', pct: diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0 },
+                      { title: 'Network', value: `▼ ${fmtBytes(netRx)}`, sub: `▲ ${fmtBytes(netTx)}`, icon: Activity, color: 'from-pink-500 to-rose-500', pct: 0 },
                     ].map((card, i) => {
                       const CardIcon = card.icon;
                       return (
                         <div key={i} className={cardClass}>
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between mb-2">
                             <div>
                               <p className="text-xs text-gray-400 font-medium">{card.title}</p>
                               <p className="text-lg font-bold mt-1">{card.value}</p>
+                              {card.sub && <p className="text-xs text-gray-500 mt-0.5">{card.sub}</p>}
                             </div>
                             <div className={`p-3 rounded-lg bg-gradient-to-tr ${card.color} text-white`}><CardIcon className="w-5 h-5" /></div>
                           </div>
+                          {card.pct > 0 && (
+                            <div className="w-full h-1.5 rounded-full bg-gray-800 overflow-hidden">
+                              <div className={`h-full rounded-full bg-gradient-to-r ${card.color}`}
+                                style={{ width: `${Math.min(card.pct, 100)}%` }} />
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
+
+                  {/* Disks detail */}
+                  {disks.length > 0 && (
+                    <div className={cardClass}>
+                      <h4 className="font-semibold mb-3">{lang === 'de' ? 'Festplatten' : 'Disks'}</h4>
+                      <div className="space-y-3">
+                        {disks.map((d: any, i: number) => (
+                          <div key={i}>
+                            <div className="flex justify-between text-xs text-gray-400 mb-1">
+                              <span className="font-mono">{d.mount}</span>
+                              <span>{d.usedGB} / {d.totalGB} GB ({d.usedPercent}%)</span>
+                            </div>
+                            <div className="w-full h-2 rounded-full bg-gray-800 overflow-hidden">
+                              <div className={`h-full rounded-full ${d.usedPercent > 90 ? 'bg-red-500' : d.usedPercent > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                style={{ width: `${Math.min(d.usedPercent, 100)}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className={cardClass}>
                       <h4 className="font-semibold mb-3">{lang === 'de' ? 'Top Prozesse' : 'Top Processes'}</h4>
                       <DataTable darkMode={darkMode} empty={t.noData} columns={[
                         { key: 'pid', label: 'PID', render: (r: any) => <span className="font-mono text-xs">{r.pid}</span> },
-                        { key: 'name', label: t.name },
-                        { key: 'cpu', label: 'CPU %', render: (r: any) => `${r.cpu}%` },
-                        { key: 'mem', label: 'MEM %', render: (r: any) => `${r.mem}%` },
+                        { key: 'command', label: t.name, render: (r: any) => <span className="font-mono text-xs truncate max-w-[160px] inline-block" title={r.command}>{r.command || r.user}</span> },
+                        { key: 'cpuPercent', label: 'CPU %', render: (r: any) => `${r.cpuPercent ?? 0}%` },
+                        { key: 'memPercent', label: 'MEM %', render: (r: any) => `${r.memPercent ?? 0}%` },
                       ]} rows={monitorProcesses} />
                     </div>
                     <div className={cardClass}>
                       <h4 className="font-semibold mb-3">{lang === 'de' ? 'CPU-Verlauf (60 Min)' : 'CPU History (60 min)'}</h4>
-                      <div className="space-y-2">
-                        {monitorHistory.slice(-30).map((h, i) => (
-                          <div key={h.id || i}>
-                            <div className="flex justify-between text-xs text-gray-400 mb-1">
-                              <span className="font-mono">{new Date(h.createdAt).toLocaleTimeString()}</span>
-                              <span>{h.cpuUsage}%</span>
+                      {monitorHistory.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-6">{lang === 'de' ? 'Noch keine Verlaufsdaten.' : 'No history data yet.'}</p>
+                      ) : (
+                        <div className="space-y-2 max-h-80 overflow-y-auto">
+                          {monitorHistory.slice(-30).map((h: any, i: number) => (
+                            <div key={h.id || i}>
+                              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                                <span className="font-mono">{new Date(h.createdAt).toLocaleTimeString()}</span>
+                                <span>{h.cpuUsage ?? 0}%</span>
+                              </div>
+                              <div className="w-full h-2 rounded-full bg-gray-800 overflow-hidden">
+                                <div className="h-full rounded-full bg-gradient-to-r from-gate-orange to-gate-purple"
+                                  style={{ width: `${Math.min(h.cpuUsage ?? 0, 100)}%` }} />
+                              </div>
                             </div>
-                            <div className="w-full h-2 rounded-full bg-gray-800 overflow-hidden">
-                              <div className="h-full rounded-full bg-gradient-to-r from-gate-orange to-gate-purple"
-                                style={{ width: `${Math.min(h.cpuUsage, 100)}%` }} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>
-              )}
+                );
+              })()}
             </div>
           )}
         </div>
