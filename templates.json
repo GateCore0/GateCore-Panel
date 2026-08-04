@@ -1,0 +1,38 @@
+{
+  "lxcTemplates": [
+    {
+      "name": "Debian 12 Bookworm",
+      "distro": "debian",
+      "version": "12",
+      "url": "https://images.linuxcontainers.org/images/debian/bookworm/amd64/default/rootfs.tar.xz"
+    },
+    {
+      "name": "Ubuntu 22.04 LTS Jammy",
+      "distro": "ubuntu",
+      "version": "22.04",
+      "url": "https://images.linuxcontainers.org/images/ubuntu/jammy/amd64/default/rootfs.tar.xz"
+    },
+    {
+      "name": "Rocky Linux 9",
+      "distro": "rocky",
+      "version": "9",
+      "url": "https://images.linuxcontainers.org/images/rockylinux/9/amd64/default/rootfs.tar.xz"
+    },
+    {
+      "name": "Alpine Linux 3.19",
+      "distro": "alpine",
+      "version": "3.19",
+      "url": "https://images.linuxcontainers.org/images/alpine/3.19/amd64/default/rootfs.tar.xz"
+    }
+  ],
+  "isoImages": [
+    {
+      "name": "Debian 12 NetInst ISO",
+      "url": "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.5.0-amd64-netinst.iso"
+    },
+    {
+      "name": "Ubuntu Server 22.04 ISO",
+      "url": "https://releases.ubuntu.com/22.04/ubuntu-22.04.4-live-server-amd64.iso"
+    }
+  ]
+}

@@ -1,93 +1,348 @@
-# Gatecore Panel
+<<<<<<< README.md
+# GateCore Enterprise Infrastructure Platform
 
+**GateCore** ist eine Proxmox-ähnliche Web-Management-Plattform für die zentrale Verwaltung von Docker, Docker Compose, VMs (KVM/QEMU), LXC-Containern, Podman, ZFS-Storage, Hardware-Passthrough und Multi-Host-Clustern.
 
+Farbschema: **Orange (#FF6B00) × Lila (#7C3AED)** · Dark & Light Mode · Deutsch / English
 
-## Getting started
+---
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Features
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+### Docker & Compose
+- Docker-Container erstellen, löschen und verwalten
+- Docker Compose Projekte erstellen und starten
+- Docker Volumes erstellen und zuweisen
+- Interaktive Web-Shell (WebSocket) in Container
 
-## Add your files
+### Hypervisor-Management
+- Remote-Hosts per SSH hinzufügen (Debian, Ubuntu, Rocky Linux, Alma Linux, Fedora)
+- Automatische SSH-Key-Generierung und passwortloses Login
+- Automatische Installation von Verwaltungstools (ZFS, QEMU/KVM, LXC, Podman, Docker)
+- VMs (QEMU/KVM) erstellen und löschen
+- LXC-Container erstellen und löschen (Templates: Debian, Ubuntu, Rocky, Alpine)
+- Podman-Container erstellen und löschen
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+### Storage & ZFS
+- ZFS-Pools erstellen (Stripe, Mirror, RAIDZ1/2/3)
+- Festplatten formatieren (ext4, XFS, ZFS)
+- Speicher-Pools für ISO, Docker Images, LXC Templates, Podman Images, Compose-Dateien, VM Disks
+
+### Hardware Passthrough
+- PCIe-Passthrough für VMs, Docker, Podman, LXC
+- USB-Passthrough für VMs, Docker, Podman, LXC
+
+### Dateiverwaltung
+- Host-Dateisystem browsen
+- Dateien lesen, bearbeiten und speichern
+- Dateien/Ordner löschen
+
+### Benutzer & LDAP/AD
+- Lokale Benutzerverwaltung (Anlegen, Löschen, Passwort ändern)
+- Rollen: ADMIN, USER, VIEWER
+- LDAP/Active Directory Anbindung
+
+### Cluster
+- Andere GateCore-Nodes per API-Key verbinden
+- Multi-Host Cluster-Ansicht
+
+### UI
+- Proxmox-ähnliche Seiten-Navigation (Sidebar)
+- Dark / Light Mode
+- Mehrsprachig: Deutsch & Englisch
+- Orange-Lila Farbschema
+
+---
+
+## Architektur
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/gatecore/Gatecore-Panel.git
-git branch -M main
-git push -uf origin main
+┌─────────────────────────────────────────────────┐
+│                  Browser (SPA)                   │
+│         React + Vite + Tailwind CSS              │
+└────────────────────┬────────────────────────────┘
+                     │ HTTP / WebSocket
+┌────────────────────▼────────────────────────────┐
+│              GateCore Backend                    │
+│         Express.js + TypeScript                  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
+│  │  Docker  │ │Hypervisor│ │  File Manager    │ │
+│  │ Service  │ │ Service  │ │  LDAP Service    │ │
+│  └──────────┘ └────┬─────┘ └──────────────────┘ │
+│                    │ SSH                         │
+│              ┌─────▼─────┐                       │
+│              │SSH Service│                       │
+│              └───────────┘                       │
+└────────┬───────────────────────────┬────────────┘
+         │                           │
+┌────────▼────────┐        ┌─────────▼────────────┐
+│   PostgreSQL    │        │  Remote Hypervisors  │
+│   (Prisma ORM)  │        │  (LXC/VM/Docker/…)   │
+└─────────────────┘        └──────────────────────┘
 ```
 
-## Integrate with your tools
+---
 
-* [Set up project integrations](https://gitlab.com/gatecore/Gatecore-Panel/-/settings/integrations)
+## Voraussetzungen
 
-## Collaborate with your team
+- Docker & Docker Compose
+- (Optional) Root-Zugang zu Remote-Hosts für Hypervisor-Funktionen
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+---
 
-## Test and Deploy
+## Installation & Start
 
-Use the built-in continuous integration in GitLab.
+```bash
+# Repository klonen / in das Projektverzeichnis wechseln
+cd GateCore
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+# Container bauen und starten
+sudo docker compose up --build -d
 
-***
+# Logs ansehen
+sudo docker logs -f gatecore-server
+```
 
-# Editing this README
+Die Anwendung ist erreichbar unter:
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+| URL | Beschreibung |
+|-----|-------------|
+| http://localhost:3001 | Web-Interface |
+| http://localhost:3001/api/... | REST API |
 
-## Suggestions for a good README
+### Standard-Login
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+| Feld | Wert |
+|------|------|
+| Benutzername | `admin` |
+| Passwort | `admin` |
 
-## Name
-Choose a self-explaining name for your project.
+> **Wichtig:** Passwort nach dem ersten Login ändern!
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+---
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## Docker Compose Services
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+| Service | Image | Port | Beschreibung |
+|---------|-------|------|--------------|
+| `gatecore-server` | gatecore-gatecore-app | 3001→3000 | Backend + Frontend |
+| `gatecore-postgres` | postgres:16-alpine | intern 5432 | PostgreSQL Datenbank |
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+---
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+## API-Übersicht
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Auth
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| POST | `/api/auth/login` | Login (lokal + LDAP) |
+| GET | `/api/auth/me` | Aktuelle Session |
+| POST | `/api/auth/logout` | Logout |
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Users
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/users` | Alle Benutzer |
+| POST | `/api/users` | Benutzer anlegen |
+| DELETE | `/api/users/:id` | Benutzer löschen |
+| PUT | `/api/users/:id/password` | Passwort ändern |
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### LDAP
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/ldap/config` | LDAP-Config abrufen |
+| POST | `/api/ldap/config` | LDAP-Config speichern |
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+### Hypervisors
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/hypervisors` | Alle Hosts (inkl. VMs/LXC/Podman) |
+| POST | `/api/hypervisors` | Host hinzufügen + provisionieren |
+| DELETE | `/api/hypervisors/:id` | Host löschen |
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+### Docker
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/docker/containers` | Container auflisten |
+| POST | `/api/docker/containers` | Container erstellen |
+| DELETE | `/api/docker/containers/:id` | Container löschen |
+| GET | `/api/docker/compose` | Compose-Projekte |
+| POST | `/api/docker/compose` | Compose-Projekt starten |
+| DELETE | `/api/docker/compose/:id` | Compose-Projekt stoppen |
+| POST | `/api/docker/volumes` | Volume erstellen |
+| GET | `/api/docker/volumes` | Volumes auflisten |
+| WS | `/ws/docker/shell/:name` | Interaktive Shell |
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### VMs / LXC / Podman
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| POST | `/api/vm` | VM erstellen |
+| DELETE | `/api/vm/:id` | VM löschen |
+| POST | `/api/lxc` | LXC erstellen |
+| DELETE | `/api/lxc/:id` | LXC löschen |
+| POST | `/api/podman` | Podman erstellen |
+| DELETE | `/api/podman/:id` | Podman löschen |
 
-## License
-For open source projects, say how it is licensed.
+### Storage & ZFS
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/zfs` | ZFS-Pools auflisten |
+| POST | `/api/zfs` | ZFS-Pool erstellen |
+| DELETE | `/api/zfs/:id` | ZFS-Pool löschen |
+| GET | `/api/storage-pools` | Speicher-Pools |
+| POST | `/api/storage-pools` | Speicher-Pool anlegen |
+| DELETE | `/api/storage-pools/:id` | Speicher-Pool löschen |
+| POST | `/api/disks/format` | Festplatte formatieren |
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+### Hardware Passthrough
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/passthrough` | Passthrough-Zuweisungen |
+| POST | `/api/passthrough` | Passthrough zuweisen |
+| DELETE | `/api/passthrough/:id` | Zuweisung entfernen |
+| GET | `/api/hardware/:hostId` | PCIe/USB Geräte listen |
+
+### Dateien
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/files/host?path=` | Verzeichnis listen |
+| GET | `/api/files/host/read?path=` | Datei lesen |
+| POST | `/api/files/host/save` | Datei speichern |
+| DELETE | `/api/files/host?path=` | Datei/Ordner löschen |
+
+### Cluster
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/cluster/nodes` | Cluster-Nodes |
+| POST | `/api/cluster/nodes` | Node hinzufügen |
+| DELETE | `/api/cluster/nodes/:id` | Node entfernen |
+
+### Templates
+| Methode | Endpoint | Beschreibung |
+|---------|----------|--------------|
+| GET | `/api/templates` | LXC/ISO Templates (aus `templates.json`) |
+
+---
+
+## Hypervisor hinzufügen – Ablauf
+
+1. Im Web-UI unter **Hypervisors** auf „Hypervisor Hinzufügen" klicken
+2. IP, SSH-Port, Root-Zugangsdaten, OS-Typ und Zweck angeben
+3. GateCore verbindet sich per SSH, generiert ein RSA-4096-Schlüsselpaar
+4. Public Key wird auf dem Host in `~/.ssh/authorized_keys` eingetragen
+5. Je nach Distro werden Pakete installiert:
+   - **Debian/Ubuntu:** `zfsutils-linux`, `qemu-kvm`, `libvirt`, `lxc`, `podman`, `docker.io`, `docker-compose`
+   - **Rocky/Alma/Fedora:** `zfs`, `qemu-kvm`, `libvirt`, `lxc`, `podman`, `docker`, `docker-compose`
+6. Bei Docker-Zweck wird der Docker-Daemon aktiviert und ein GateCore-Agent-Container gestartet
+7. Host erscheint im Dashboard als **ONLINE**
+
+---
+
+## LXC Templates
+
+Templates werden in `templates.json` verwaltet und können per URL heruntergeladen werden:
+
+| Distro | Version | Quelle |
+|--------|---------|--------|
+| Debian | 12 Bookworm | linuxcontainers.org |
+| Ubuntu | 22.04 LTS Jammy | linuxcontainers.org |
+| Rocky Linux | 9 | linuxcontainers.org |
+| Alpine Linux | 3.19 | linuxcontainers.org |
+
+Eigene Templates und ISO-Images können in `templates.json` ergänzt werden.
+
+---
+
+## Projektstruktur
+
+```
+GateCore/
+├── docker-compose.yml          # Orchestration (App + PostgreSQL)
+├── Dockerfile                  # Multi-Stage Build (Frontend + Backend)
+├── start.sh                    # Startup: migrate → seed → server
+├── package.json                # Backend Dependencies
+├── templates.json              # LXC/ISO Template-URLs
+├── prisma/
+│   ├── schema.prisma           # Datenbankschema
+│   └── migrations/             # SQL-Migrationen
+├── src/backend/
+│   ├── index.ts                # Express API + WebSocket
+│   └── services/
+│       ├── dockerService.ts    # Docker/Compose Verwaltung
+│       ├── hypervisorService.ts# VM/LXC/Podman/ZFS via SSH
+│       ├── sshService.ts       # SSH-Key + Host-Provisioning
+│       ├── fileManagerService.ts # Host/Container Dateisystem
+│       └── ldapService.ts      # LDAP/AD Authentifizierung
+└── frontend/
+    ├── package.json
+    ├── vite.config.ts
+    ├── tailwind.config.js
+    ├── postcss.config.js
+    └── src/
+        ├── App.tsx             # Komplettes Web-Interface
+        ├── index.css           # Tailwind Directives
+        └── main.tsx
+```
+
+---
+
+## Entwicklung (ohne Docker)
+
+```bash
+# Backend Dependencies
+npm install
+
+# Frontend Dependencies
+cd frontend && npm install && cd ..
+
+# PostgreSQL starten (oder DATABASE_URL anpassen)
+# .env: DATABASE_URL=postgresql://gatecore:gatecore@localhost:5432/gatecore
+
+# Prisma Migration
+npx prisma migrate deploy
+npx prisma generate
+
+# Backend bauen
+npm run build:backend
+
+# Frontend bauen
+cd frontend && npm run build && cd ..
+
+# Server starten
+node dist/backend/index.js
+
+# Oder Dev-Mode Frontend
+cd frontend && npm run dev   # Vite Dev-Server auf :5173
+```
+
+---
+
+## Umgebungsvariablen
+
+| Variable | Default | Beschreibung |
+|----------|---------|--------------|
+| `PORT` | `3000` | Backend-Port |
+| `DATABASE_URL` | (compose) | PostgreSQL Connection String |
+| `JWT_SECRET` | `gatecore-super-secret-key` | JWT Signing Key |
+| `NODE_ENV` | `production` | Environment |
+
+---
+
+## Tech-Stack
+
+| Schicht | Technologie |
+|---------|-------------|
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, Lucide Icons |
+| Backend | Node.js 20, Express, express-ws, TypeScript |
+| ORM | Prisma |
+| Datenbank | PostgreSQL 16 |
+| Auth | JWT + bcrypt + LDAP/AD |
+| SSH | node-ssh |
+| Container | Docker Multi-Stage Build, Alpine |
+
+---
+
+## Lizenz
+
+Proprietary – GateCore Enterprise Infrastructure Platform
+=======
