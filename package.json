@@ -3,10 +3,40 @@
   "version": "1.0.0",
   "description": "GateCore - Enterprise Infrastructure Management for Docker, VMs, LXC, Podman & ZFS",
   "main": "dist/backend/index.js",
+  "files": [
+    "dist",
+    "frontend/dist",
+    "prisma",
+    "templates.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GateCore0/GateCore-Panel.git"
+  },
+  "homepage": "https://github.com/GateCore0/GateCore-Panel#readme",
+  "bugs": {
+    "url": "https://github.com/GateCore0/GateCore-Panel/issues"
+  },
+  "keywords": [
+    "gatecore",
+    "docker",
+    "vm",
+    "lxc",
+    "podman",
+    "zfs",
+    "infrastructure",
+    "management",
+    "panel"
+  ],
   "scripts": {
     "build:frontend": "cd frontend && npm run build",
     "build:backend": "tsc",
     "build": "npm run build:frontend && npm run build:backend",
+    "prepublishOnly": "npm run build",
     "start": "node dist/backend/index.js",
     "dev:backend": "ts-node-dev --respawn --transpile-only src/backend/index.ts",
     "dev:frontend": "cd frontend && npm run dev",

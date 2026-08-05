@@ -1,0 +1,33 @@
+# .npmignore – Sicherheitsnetz zusätzlich zum "files"-Feld in package.json
+# Verhindert, dass Quellcode, Configs & Secrets ins NPM-Paket gelangen.
+
+# Quellcode & Dev-Konfiguration
+src
+frontend/src
+frontend/index.html
+frontend/tsconfig.json
+frontend/vite.config.ts
+frontend/tailwind.config.js
+frontend/postcss.config.js
+
+# CI & Deployment
+.github
+Dockerfile
+docker-compose.yml
+.dockerignore
+start.sh
+gati.svg
+
+# Umgebung & Secrets (niemals publizieren!)
+.env
+.env.*
+
+# Tests & Coverage
+coverage
+.nyc_output
+
+# Logs & Temp
+*.log
+logs/
+npm-debug.log*
+*.tsbuildinfo
