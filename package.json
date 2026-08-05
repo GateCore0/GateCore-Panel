@@ -1,5 +1,5 @@
 {
-  "name": "gatecore",
+  "name": "gatecore-panel",
   "version": "1.0.0",
   "description": "GateCore - Enterprise Infrastructure Management for Docker, VMs, LXC, Podman & ZFS",
   "main": "dist/backend/index.js",
@@ -23,6 +23,7 @@
   },
   "keywords": [
     "gatecore",
+    "gatecore-panel",
     "docker",
     "vm",
     "lxc",

@@ -1,7 +1,7 @@
 name: NPM Package Publish
 
 # Trigger: Tags v* (z.B. v1.2.3), manuell
-# Publish: Ein NPM-Package "gatecore" mit gebautem Frontend + Backend
+# Publish: Ein NPM-Package "gatecore-panel" mit gebautem Frontend + Backend
 on:
   push:
     tags:
@@ -44,12 +44,30 @@ jobs:
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
         if: github.event_name == 'push'
 
-      # 7) Publish auf npm (mit Provenance, ohne "latest"-Git-Log-Fehler)
+      # 7) Vorab prüfen, ob das NPM_TOKEN-Secret gesetzt ist
+      - name: Check NPM_TOKEN secret
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::Secret NPM_TOKEN ist nicht gesetzt!"
+            echo "::error::Bitte anlegen: Repo-Settings → Secrets and variables → Actions → New repository secret"
+            echo "::error::Name: NPM_TOKEN | Wert: npm-Access-Token mit 'publish'-Rechten (https://www.npmjs.com/settings/<user>/tokens)"
+            exit 1
+          fi
+          echo "NPM_TOKEN ist gesetzt ✓"
+
+      # 8) Publish auf npm (mit Provenance, ohne "latest"-Git-Log-Fehler)
       #    Prerelease-Versionen (z.B. v1.1.0-beta.1) → dist-tag "next",
       #    stabile Versionen → dist-tag "latest"
+      #    Bei manuellem Dispatch wird die Version aus package.json gelesen.
       - name: Publish to npm
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
           if [[ "$VERSION" == *-* ]]; then
             echo "Prerelease erkannt (${VERSION}) → Publish mit dist-tag 'next'"
             npm publish --provenance --tag next
