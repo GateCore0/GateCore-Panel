@@ -1,4 +1,3 @@
-<<<<<<< README.md
 # GateCore Enterprise Infrastructure Platform
 
 **GateCore** ist eine Proxmox-ähnliche Web-Management-Plattform für die zentrale Verwaltung von Docker, Docker Compose, VMs (KVM/QEMU), LXC-Containern, Podman, ZFS-Storage, Hardware-Passthrough und Multi-Host-Clustern.

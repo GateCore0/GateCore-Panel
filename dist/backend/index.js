@@ -50,6 +50,8 @@ const hypervisorService_1 = require("./services/hypervisorService");
 const dockerService_1 = require("./services/dockerService");
 const fileManagerService_1 = require("./services/fileManagerService");
 const ldapService_1 = require("./services/ldapService");
+const monitoringService_1 = require("./services/monitoringService");
+const apiKeyService_1 = require("./services/apiKeyService");
 const { app } = (0, express_ws_1.default)((0, express_1.default)());
 const prisma = new client_1.PrismaClient();
 const PORT = process.env.PORT || 3000;
@@ -230,16 +232,41 @@ app.get('/api/docker/containers', async (req, res) => {
                     status: running ? 'RUNNING' : 'STOPPED',
                     createdAt: null,
                     isRealDocker: true,
+                    hostId: hostId || null,
                 };
             });
         }
         catch { /* Docker nicht erreichbar → nur DB */ }
         // DB-Container ergänzen (falls dort zusätzlich verwaltet)
-        const dbContainers = await prisma.dockerContainer.findMany({ where: { hostId: hostId || null } });
+        const dbContainers = await prisma.dockerContainer.findMany({
+            where: hostId ? { hostId } : {},
+            include: { host: true },
+        });
         const existingNames = new Set(real.map((c) => c.name));
         for (const dbc of dbContainers) {
             if (!existingNames.has(dbc.name)) {
                 real.push({ ...dbc, isRealDocker: false });
+            }
+        }
+        // Host-Namen auflösen (für Anzeige "Host" in der Tabelle)
+        const hostMap = new Map();
+        const ids = new Set();
+        for (const c of real) {
+            if (c.hostId) {
+                ids.add(c.hostId);
+                if (c.host?.name)
+                    hostMap.set(c.hostId, c.host.name);
+            }
+        }
+        if (ids.size > 0) {
+            const hosts = await prisma.host.findMany({ where: { id: { in: [...ids] } } });
+            for (const h of hosts) {
+                hostMap.set(h.id, h.name);
+            }
+        }
+        for (const c of real) {
+            if (c.hostId && hostMap.has(c.hostId)) {
+                c.host = { name: hostMap.get(c.hostId) };
             }
         }
         res.json(real);
@@ -277,6 +304,31 @@ app.get('/api/docker/containers/:id/logs', async (req, res) => {
         const lines = Number(req.query.lines) || 200;
         const logs = await dockerService_1.DockerService.containerLogs(id, lines, hostId);
         res.json({ logs });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Container-Konfiguration auslesen (Ports & Volumes)
+app.get('/api/docker/containers/:id/config', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const hostId = req.query.hostId;
+        const details = await dockerService_1.DockerService.containerDetails(id, hostId);
+        res.json(details);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Container-Konfiguration aktualisieren (Ports freigeben/blockieren, Volumes hinzufügen/entfernen)
+app.put('/api/docker/containers/:id/config', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { action, ports, volumes } = req.body;
+        const hostId = req.body.hostId;
+        const result = await dockerService_1.DockerService.updateContainerConfig(id, { action, ports, volumes, hostId });
+        res.json(result);
     }
     catch (error) {
         res.status(500).json({ error: error.message });
@@ -332,6 +384,53 @@ app.get('/api/docker/volumes', async (req, res) => {
             return { ...v, id: null, isPool: false, path: null };
         });
         res.json(real);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Docker-Volume löschen
+app.delete('/api/docker/volumes/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        const hostId = req.query.hostId;
+        // Zuerst StoragePool-Eintrag löschen (falls vorhanden)
+        await prisma.storagePool.deleteMany({ where: { name, type: 'DOCKER_VOLUME' } });
+        // Docker-Volume löschen (falls real vorhanden)
+        try {
+            await runDockerCmd(hostId, `docker volume rm ${name} 2>/dev/null || true`);
+            // Falls Verzeichnis existiert (bei manuell erstellten Volumes)
+            await runDockerCmd(hostId, `rm -rf /var/lib/docker/volumes/${name} 2>/dev/null || true`);
+        }
+        catch { /* not real docker */ }
+        res.json({ success: true });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Docker-Volume umbenennen
+app.put('/api/docker/volumes/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        const { newName, hostId } = req.body;
+        if (!newName || !name)
+            return res.status(400).json({ error: 'name and newName required' });
+        // Docker-Volume umbenennen (falls real vorhanden)
+        try {
+            await runDockerCmd(hostId, `docker volume create ${newName} >/dev/null 2>&1`);
+            // Daten kopieren
+            await runDockerCmd(hostId, `cp -a /var/lib/docker/volumes/${name}/_data /. ${newName} 2>/dev/null || true`);
+            await runDockerCmd(hostId, `cp -a /var/lib/docker/volumes/${name}/_data /var/lib/docker/volumes/${newName}/_data 2>/dev/null || true`);
+            await runDockerCmd(hostId, `docker volume rm ${name} 2>/dev/null || true`);
+        }
+        catch { /* not real docker */ }
+        // StoragePool-Eintrag umbenennen (falls vorhanden)
+        await prisma.storagePool.updateMany({
+            where: { name, type: 'DOCKER_VOLUME' },
+            data: { name: newName },
+        });
+        res.json({ success: true, name: newName });
     }
     catch (error) {
         res.status(500).json({ error: error.message });
@@ -401,6 +500,36 @@ app.post('/api/podman', async (req, res) => {
     const podman = await hypervisorService_1.HypervisorService.createPodmanContainer(hostId, name, image);
     res.json(podman);
 });
+// --- MONITORING ---
+app.get('/api/hosts/:id/metrics', async (req, res) => {
+    try {
+        const metrics = await monitoringService_1.MonitoringService.getMetrics(req.params.id);
+        res.json(metrics);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+app.get('/api/hosts/:id/processes', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 10;
+        const processes = await monitoringService_1.MonitoringService.getTopProcesses(req.params.id, limit);
+        res.json(processes);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+app.get('/api/hosts/:id/metrics/history', async (req, res) => {
+    try {
+        const minutes = parseInt(req.query.minutes) || 60;
+        const history = await monitoringService_1.MonitoringService.getMetricHistory(req.params.id, minutes);
+        res.json(history);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 // --- STORAGE & ZFS & DISK ---
 app.post('/api/zfs', async (req, res) => {
     const { hostId, poolName, raidLevel, disks } = req.body;
@@ -416,6 +545,15 @@ app.get('/api/hardware/:hostId', async (req, res) => {
     try {
         const devices = await hypervisorService_1.HypervisorService.listHardwareDevices(req.params.hostId);
         res.json(devices);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+app.get('/api/hosts/:id/disks', async (req, res) => {
+    try {
+        const disks = await hypervisorService_1.HypervisorService.listDisks(req.params.id);
+        res.json(disks);
     }
     catch (error) {
         res.status(500).json({ error: error.message });
@@ -719,7 +857,94 @@ app.delete('/api/files/host', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-// --- CLUSTER DELETE ---
+// --- CLUSTER NODES & API KEYS (sichere API-Key-Generierung) ---
+// Middleware: Authentifizierung eines Cluster-Nodes per API-Key
+const authenticateClusterKey = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const apiKey = (authHeader && authHeader.split(' ')[1]) || req.query.apiKey || req.body?.apiKey;
+    if (!apiKey)
+        return res.status(401).json({ error: 'API key required' });
+    const node = await apiKeyService_1.ApiKeyService.validateKey(apiKey, prisma);
+    if (!node)
+        return res.status(403).json({ error: 'Invalid or revoked API key' });
+    req.clusterNode = node;
+    next();
+};
+// Alle Cluster-Nodes auflisten (ohne Klartext-Keys – nur Preview)
+app.get('/api/cluster/nodes', async (req, res) => {
+    const nodes = await prisma.clusterNode.findMany({
+        select: {
+            id: true,
+            name: true,
+            endpoint: true,
+            apiKeyPreview: true,
+            status: true,
+            description: true,
+            lastUsedAt: true,
+            expiresAt: true,
+            revoked: true,
+            createdAt: true,
+            updatedAt: true,
+        },
+    });
+    res.json(nodes);
+});
+// Neuen Cluster-Node mit automatisch generiertem API-Key anlegen
+app.post('/api/cluster/nodes', async (req, res) => {
+    const { name, endpoint, description, expiresInDays } = req.body;
+    if (!name || !endpoint)
+        return res.status(400).json({ error: 'name and endpoint are required' });
+    const { plainTextKey, keyHash, preview } = apiKeyService_1.ApiKeyService.generate();
+    const node = await prisma.clusterNode.create({
+        data: {
+            name,
+            endpoint,
+            apiKeyHash: keyHash,
+            apiKeyPreview: preview,
+            status: 'PENDING',
+            description: description || null,
+            expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000) : null,
+        },
+    });
+    // Klartext-Key wird NUR hier einmalig zurückgegeben
+    res.json({
+        ...node,
+        apiKey: plainTextKey, // Einmalige Anzeige!
+        warning: 'Store this key securely. It will only be shown once.',
+    });
+});
+// Eigenständigen Cluster-API-Key generieren (ohne vorher einen Node anzulegen).
+// Der Key kann an einen anderen GateCore-Node übergeben werden, der sich damit
+// unter /api/cluster/register bei diesem Panel verbindet.
+app.post('/api/cluster/keys/generate', authenticateToken, async (req, res) => {
+    try {
+        const { name, expiresInDays } = req.body;
+        const { plainTextKey, keyHash, preview } = apiKeyService_1.ApiKeyService.generate();
+        const node = await prisma.clusterNode.create({
+            data: {
+                name: name || 'Unbound API Key',
+                endpoint: '',
+                apiKeyHash: keyHash,
+                apiKeyPreview: preview,
+                status: 'PENDING',
+                description: 'Freigegebener Cluster-API-Key (noch kein Node verbunden)',
+                expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000) : null,
+            },
+        });
+        res.json({
+            success: true,
+            id: node.id,
+            apiKey: plainTextKey, // Einmalige Anzeige!
+            apiKeyPreview: preview,
+            expiresAt: node.expiresAt,
+            warning: 'Store this key securely. It will only be shown once.',
+        });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Cluster-Node löschen
 app.delete('/api/cluster/nodes/:id', async (req, res) => {
     try {
         await prisma.clusterNode.delete({ where: { id: req.params.id } });
@@ -729,6 +954,73 @@ app.delete('/api/cluster/nodes/:id', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+// API-Key widerrufen (revoke)
+app.post('/api/cluster/nodes/:id/revoke', async (req, res) => {
+    try {
+        await prisma.clusterNode.update({
+            where: { id: req.params.id },
+            data: { revoked: true, status: 'DISCONNECTED' },
+        });
+        res.json({ success: true });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// Neuen API-Key für einen bestehenden Node generieren (Rotation)
+app.post('/api/cluster/nodes/:id/rotate-key', async (req, res) => {
+    try {
+        const node = await prisma.clusterNode.findUnique({ where: { id: req.params.id } });
+        if (!node)
+            return res.status(404).json({ error: 'Node not found' });
+        const { plainTextKey, keyHash, preview } = apiKeyService_1.ApiKeyService.generate();
+        await prisma.clusterNode.update({
+            where: { id: node.id },
+            data: { apiKeyHash: keyHash, apiKeyPreview: preview, revoked: false, status: 'PENDING' },
+        });
+        res.json({
+            success: true,
+            apiKey: plainTextKey, // Einmalige Anzeige
+            warning: 'Store this key securely. It will only be shown once.',
+        });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// --- CLUSTER REGISTRIERUNG & HEARTBEAT (für Worker-Nodes) ---
+// Worker-Node registriert sich selbst mit dem API-Key
+app.post('/api/cluster/register', authenticateClusterKey, async (req, res) => {
+    const clusterNode = req.clusterNode;
+    const { name, endpoint } = req.body;
+    await prisma.clusterNode.update({
+        where: { id: clusterNode.id },
+        data: {
+            status: 'CONNECTED',
+            lastUsedAt: new Date(),
+            // Ungebundene Keys (via /api/cluster/keys/generate erzeugt) vervollständigen
+            ...(name ? { name } : {}),
+            ...(endpoint ? { endpoint } : {}),
+        },
+    });
+    res.json({ success: true, nodeId: clusterNode.id, name: clusterNode.name });
+});
+// Heartbeat: Worker-Node meldet sich regelmäßig (hält Status "CONNECTED")
+app.post('/api/cluster/heartbeat', authenticateClusterKey, async (req, res) => {
+    const clusterNode = req.clusterNode;
+    await prisma.clusterNode.update({
+        where: { id: clusterNode.id },
+        data: { status: 'CONNECTED', lastUsedAt: new Date() },
+    });
+    res.json({ success: true, timestamp: new Date().toISOString() });
+});
+// Cluster-Health (kann mit API-Key abgefragt werden)
+app.get('/api/cluster/health', async (req, res) => {
+    const nodes = await prisma.clusterNode.findMany({
+        select: { id: true, name: true, status: true, lastUsedAt: true, endpoint: true },
+    });
+    res.json({ status: 'ok', nodes });
+});
 // --- TEMPLATES JSON API ---
 app.get('/api/templates', (req, res) => {
     const templatesPath = path.join(process.cwd(), 'templates.json');
@@ -737,18 +1029,6 @@ app.get('/api/templates', (req, res) => {
         return res.json(JSON.parse(data));
     }
     res.json({ lxcTemplates: [], isoImages: [] });
-});
-// --- CLUSTER NODES & API KEYS ---
-app.get('/api/cluster/nodes', async (req, res) => {
-    const nodes = await prisma.clusterNode.findMany();
-    res.json(nodes);
-});
-app.post('/api/cluster/nodes', async (req, res) => {
-    const { name, endpoint, apiKey } = req.body;
-    const node = await prisma.clusterNode.create({
-        data: { name, endpoint, apiKey, status: 'CONNECTED' },
-    });
-    res.json(node);
 });
 // --- FILE MANAGER API ---
 app.get('/api/files/host', async (req, res) => {
@@ -848,4 +1128,18 @@ app.listen(PORT, async () => {
     await ensureLocalHost();
     await seedDefaultUser();
     console.log(`GateCore Server running on port ${PORT}`);
+    // --- MONITORING: Metrik-Snapshots alle 60 Sekunden speichern ---
+    const storeAllSnapshots = async () => {
+        try {
+            const hosts = await prisma.host.findMany({ select: { id: true } });
+            for (const h of hosts) {
+                await monitoringService_1.MonitoringService.storeMetricSnapshot(h.id);
+            }
+        }
+        catch (err) {
+            console.error('Monitoring snapshot error:', err);
+        }
+    };
+    storeAllSnapshots();
+    setInterval(storeAllSnapshots, 60 * 1000);
 });

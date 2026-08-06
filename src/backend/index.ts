@@ -914,6 +914,39 @@ app.post('/api/cluster/nodes', async (req, res) => {
   });
 });
 
+// Eigenständigen Cluster-API-Key generieren (ohne vorher einen Node anzulegen).
+// Der Key kann an einen anderen GateCore-Node übergeben werden, der sich damit
+// unter /api/cluster/register bei diesem Panel verbindet.
+app.post('/api/cluster/keys/generate', authenticateToken, async (req, res) => {
+  try {
+    const { name, expiresInDays } = req.body;
+    const { plainTextKey, keyHash, preview } = ApiKeyService.generate();
+
+    const node = await prisma.clusterNode.create({
+      data: {
+        name: name || 'Unbound API Key',
+        endpoint: '',
+        apiKeyHash: keyHash,
+        apiKeyPreview: preview,
+        status: 'PENDING',
+        description: 'Freigegebener Cluster-API-Key (noch kein Node verbunden)',
+        expiresAt: expiresInDays ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000) : null,
+      },
+    });
+
+    res.json({
+      success: true,
+      id: node.id,
+      apiKey: plainTextKey, // Einmalige Anzeige!
+      apiKeyPreview: preview,
+      expiresAt: node.expiresAt,
+      warning: 'Store this key securely. It will only be shown once.',
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Cluster-Node löschen
 app.delete('/api/cluster/nodes/:id', async (req, res) => {
   try {
@@ -965,9 +998,16 @@ app.post('/api/cluster/nodes/:id/rotate-key', async (req, res) => {
 // Worker-Node registriert sich selbst mit dem API-Key
 app.post('/api/cluster/register', authenticateClusterKey, async (req, res) => {
   const clusterNode = (req as any).clusterNode;
+  const { name, endpoint } = req.body;
   await prisma.clusterNode.update({
     where: { id: clusterNode.id },
-    data: { status: 'CONNECTED', lastUsedAt: new Date() },
+    data: {
+      status: 'CONNECTED',
+      lastUsedAt: new Date(),
+      // Ungebundene Keys (via /api/cluster/keys/generate erzeugt) vervollständigen
+      ...(name ? { name } : {}),
+      ...(endpoint ? { endpoint } : {}),
+    },
   });
   res.json({ success: true, nodeId: clusterNode.id, name: clusterNode.name });
 });

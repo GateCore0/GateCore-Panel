@@ -69,6 +69,10 @@ const translations = {
     copyKey: 'Key kopieren',
     keyCopied: 'Key kopiert!',
     keyWarning: 'Speichere diesen Key sicher – er wird nur einmal angezeigt!',
+    generateKeyDesc: 'Erzeuge einen sicheren Cluster-API-Key und gib ihn an einen anderen GateCore-Node weiter, damit dieser sich mit diesem Panel verbindet.',
+    keyName: 'Key Name (optional)',
+    unbound: 'Ungebunden',
+    generate: 'Generieren',
     revokeKey: 'Key widerrufen',
     rotateKey: 'Key rotieren',
     revoked: 'Widerrufen',
@@ -201,6 +205,10 @@ const translations = {
     copyKey: 'Copy key',
     keyCopied: 'Key copied!',
     keyWarning: 'Store this key securely – it will only be shown once!',
+    generateKeyDesc: 'Create a secure cluster API key and share it with another GateCore node so it can connect to this panel.',
+    keyName: 'Key name (optional)',
+    unbound: 'Unbound',
+    generate: 'Generate',
     revokeKey: 'Revoke key',
     rotateKey: 'Rotate key',
     revoked: 'Revoked',
@@ -796,6 +804,24 @@ export default function App() {
         }
       }
       setModal(null); setForm({});
+    } catch (e: any) {
+      showError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Eigenständig einen Cluster-API-Key generieren (Join-Cluster-Workflow)
+  const generateClusterKey = async () => {
+    setLoading(true);
+    try {
+      const data = await api('/api/cluster/keys/generate', {
+        method: 'POST',
+        body: JSON.stringify({ name: form.name, expiresInDays: form.expiresInDays }),
+      });
+      setForm((p: any) => ({ ...p, generatedKey: data.apiKey }));
+      showSuccess(t.generatedKey);
+      loadCluster();
     } catch (e: any) {
       showError(e.message);
     } finally {
@@ -1672,13 +1698,14 @@ export default function App() {
                 <h3 className="text-lg font-semibold">{t.cluster}</h3>
                 <div className="flex gap-2">
                   <Btn onClick={() => { setForm({}); setModal('cluster'); }}><Plus className="w-4 h-4" />{t.addNode}</Btn>
+                  <Btn onClick={() => { setForm({}); setModal('clusterKey'); }} variant="purple"><Key className="w-4 h-4" />{t.generateKey}</Btn>
                   <Btn onClick={loadCluster} variant="ghost"><RefreshCw className="w-4 h-4" /></Btn>
                 </div>
               </div>
               <div className={cardClass}>
                 <DataTable darkMode={darkMode} empty={t.noData} columns={[
-                  { key: 'name', label: t.name },
-                  { key: 'endpoint', label: t.endpoint },
+                  { key: 'name', label: t.name, render: (r: any) => r.name || '—' },
+                  { key: 'endpoint', label: t.endpoint, render: (r: any) => r.endpoint || '—' },
                   { key: 'apiKey', label: t.apiKey, render: (r: any) => <span className={`font-mono text-xs ${r.revoked ? 'text-red-400 line-through' : ''}`}>{r.apiKeyPreview || '—'}</span> },
                   { key: 'status', label: t.status, render: (r: any) => <StatusBadge status={r.revoked ? t.revoked : r.status} /> },
                   { key: 'actions', label: t.actions, render: (r: any) => (
@@ -2187,6 +2214,35 @@ export default function App() {
           <Btn onClick={submitForm} disabled={loading}>{loading ? t.loading : t.create}</Btn>
           <Btn onClick={() => setModal(null)} variant="ghost">{t.cancel}</Btn>
         </div>
+      </Modal>
+
+      {/* Cluster API-Key generieren */}
+      <Modal open={modal === 'clusterKey'} onClose={() => { setModal(null); setForm({}); }} title={t.generateKey} darkMode={darkMode}>
+        {!form.generatedKey ? (
+          <>
+            <p className="text-xs text-gray-500 mb-3">{t.generateKeyDesc}</p>
+            <Input label={t.keyName} darkMode={darkMode} value={form.name || ''} onChange={(e: any) => setF('name', e.target.value)} placeholder={t.unbound} />
+            <Input label={t.expiresIn} darkMode={darkMode} type="number" value={form.expiresInDays || ''} onChange={(e: any) => setF('expiresInDays', e.target.value)} placeholder="30 = 30 Tage / leer = unbegrenzt" />
+            <div className="flex gap-2 mt-4">
+              <Btn onClick={generateClusterKey} disabled={loading}>{loading ? t.loading : t.generate}</Btn>
+              <Btn onClick={() => { setModal(null); setForm({}); }} variant="ghost">{t.cancel}</Btn>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10">
+              <p className="text-xs font-semibold text-emerald-400 mb-1">{t.generatedKey}:</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 font-mono text-xs break-all">{form.generatedKey}</code>
+                <button onClick={() => { navigator.clipboard.writeText(form.generatedKey); showSuccess(t.keyCopied); }} className="p-1.5 rounded hover:bg-emerald-500/20 text-emerald-400" title={t.copyKey}><Copy className="w-3.5 h-3.5" /></button>
+              </div>
+              <p className="text-xs text-amber-400 mt-2">{t.keyWarning}</p>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Btn onClick={() => { setModal(null); setForm({}); }}>{t.close}</Btn>
+            </div>
+          </>
+        )}
       </Modal>
 
       {/* Edit Container (Ports & Volumes) */}
