@@ -5,11 +5,12 @@ import {
   Server, HardDrive, Box, Layers, Cpu, Shield, Users, Folder,
   Terminal, Sun, Moon, Globe, Plus, Trash2, Play, Square, Code, LogOut,
   X, RefreshCw, Edit, Save, Key, Download, Upload, ChevronRight, Eye, Monitor,
-  RotateCw, ScrollText, Usb, Activity, Copy
+  RotateCw, ScrollText, Usb, Activity, Copy, Image as ImageIcon, DownloadCloud, FileArchive, PackageOpen, FolderPlus
 } from 'lucide-react';
 
 type Language = string;
-type ActiveTab = 'dashboard' | 'docker' | 'hypervisor' | 'vms' | 'podman' | 'storage' | 'passthrough' | 'files' | 'users' | 'cluster' | 'monitoring';
+type ActiveTab = 'dashboard' | 'docker' | 'hypervisor' | 'vms' | 'podman' | 'storage' | 'images' | 'passthrough' | 'files' | 'users' | 'cluster' | 'monitoring';
+type ImageTab = 'docker' | 'podman' | 'iso' | 'lxc';
 
 const translations = {
   de: {
@@ -147,6 +148,44 @@ const translations = {
     renameVolume: 'Volume umbenennen',
     newVolumeName: 'Neuer Name',
     rename: 'Umbenennen',
+    images: 'Images',
+    imagesManage: 'Images verwalten',
+    dockerImages: 'Docker Images',
+    podmanImages: 'Podman Images',
+    isoImages: 'ISO Images',
+    lxcTemplates: 'LXC Templates',
+    pullImage: 'Image Pullen',
+    pull: 'Pullen',
+    imageName: 'Image Name',
+    imageId: 'ID',
+    imageSize: 'Größe',
+    createdAt: 'Erstellt',
+    repository: 'Repository',
+    selectStorage: 'Speicher auswählen',
+    selectStoragePool: 'Speicher-Pool auswählen',
+    selectImagePool: 'Speicher-Pool auswählen',
+    noStoragePools: 'Keine Speicher-Pools vorhanden',
+    downloadToPool: 'In Speicher herunterladen',
+    uploadToPool: 'In Speicher hochladen',
+    downloadUrl: 'Download URL',
+    fileUrl: 'Datei URL',
+    fileName: 'Dateiname',
+    filesInPool: 'Dateien im Speicher',
+    poolFiles: 'Speicher-Dateien',
+    managePool: 'Speicher verwalten',
+    newFolder: 'Neuer Ordner',
+    optional: 'Optional',
+    download: 'Herunterladen',
+    imageHost: 'Image Host',
+    allHosts: 'Alle Hosts',
+    thisHost: 'Dieser Rechner (lokal)',
+    remoteHosts: 'Remote Hosts',
+    chooseHost: 'Host auswählen',
+    noImagesFound: 'Keine Images gefunden',
+    deleteImage: 'Image löschen',
+    imageTypes: 'Image Typen',
+    pullHint: 'z.B. nginx:latest oder ubuntu:24.04',
+    dockerDesktop: 'Docker (dieser Rechner)',
   },
   en: {
     title: 'GateCore Infrastructure',
@@ -283,6 +322,44 @@ const translations = {
     renameVolume: 'Rename Volume',
     newVolumeName: 'New name',
     rename: 'Rename',
+    images: 'Images',
+    imagesManage: 'Manage Images',
+    dockerImages: 'Docker Images',
+    podmanImages: 'Podman Images',
+    isoImages: 'ISO Images',
+    lxcTemplates: 'LXC Templates',
+    pullImage: 'Pull Image',
+    pull: 'Pull',
+    imageName: 'Image Name',
+    imageId: 'ID',
+    imageSize: 'Size',
+    createdAt: 'Created',
+    repository: 'Repository',
+    selectStorage: 'Select storage',
+    selectStoragePool: 'Select storage pool',
+    selectImagePool: 'Select storage pool',
+    noStoragePools: 'No storage pools available',
+    downloadToPool: 'Download to storage',
+    uploadToPool: 'Upload to storage',
+    downloadUrl: 'Download URL',
+    fileUrl: 'File URL',
+    fileName: 'File name',
+    filesInPool: 'Files in storage',
+    poolFiles: 'Storage Files',
+    managePool: 'Manage storage',
+    newFolder: 'New folder',
+    optional: 'Optional',
+    download: 'Download',
+    imageHost: 'Image Host',
+    allHosts: 'All hosts',
+    thisHost: 'This machine (local)',
+    remoteHosts: 'Remote Hosts',
+    chooseHost: 'Select host',
+    noImagesFound: 'No images found',
+    deleteImage: 'Delete image',
+    imageTypes: 'Image Types',
+    pullHint: 'e.g. nginx:latest or ubuntu:24.04',
+    dockerDesktop: 'Docker (this machine)',
   }
 };
 
@@ -535,6 +612,17 @@ export default function App() {
   const [monitorMetrics, setMonitorMetrics] = useState<any>(null);
   const [monitorProcesses, setMonitorProcesses] = useState<any[]>([]);
   const [monitorHistory, setMonitorHistory] = useState<any[]>([]);
+  const [imageTab, setImageTab] = useState<ImageTab>('docker');
+  const [dockerImages, setDockerImages] = useState<any[]>([]);
+  const [podmanImages, setPodmanImages] = useState<any[]>([]);
+  const [imageHostFilter, setImageHostFilter] = useState('');
+  const [imagePullName, setImagePullName] = useState('');
+  const [imagePoolId, setImagePoolId] = useState('');
+  const [poolFiles, setPoolFiles] = useState<any[]>([]);
+  const [poolFilePath, setPoolFilePath] = useState('');
+  const [selectedStoragePool, setSelectedStoragePool] = useState('');
+  const [downloadUrl, setDownloadUrl] = useState('');
+  const [downloadFilename, setDownloadFilename] = useState('');
 
   // Modal states
   const [modal, setModal] = useState<string | null>(null);
@@ -652,7 +740,12 @@ export default function App() {
 
   const loadFiles = useCallback(async (path = filePath, hostId = selectedHost, container = selectedContainer, containerModeOn = containerMode, dockerSourceOn = dockerSource) => {
     try {
-      if (hostId === 'local-docker' && containerModeOn && container) {
+      if (selectedStoragePool) {
+        // Dateien innerhalb eines Storage-Pools browsen
+        const q = `?path=${encodeURIComponent(path)}`;
+        const f = await api(`/api/storage-pools/${selectedStoragePool}/files${q}`);
+        setFiles(f); setFilePath(path);
+      } else if (hostId === 'local-docker' && containerModeOn && container) {
         // Docker-Container-Dateisystem dieses Rechners (docker exec)
         const q = `?path=${encodeURIComponent(path)}&container=${encodeURIComponent(container)}`;
         const f = await api(`/api/files/docker/container/local${q}`);
@@ -675,11 +768,39 @@ export default function App() {
         setFiles(f); setFilePath(path);
       }
     } catch (e: any) { showError(e.message); }
-  }, [filePath, selectedHost, selectedContainer, containerMode, dockerSource]);
+  }, [filePath, selectedHost, selectedContainer, containerMode, dockerSource, selectedStoragePool]);
 
   const loadTemplates = useCallback(async () => {
     try { setTemplates(await api('/api/templates')); } catch { /* */ }
   }, []);
+
+  const loadDockerImages = useCallback(async (hostId?: string) => {
+    try {
+      const q = hostId ? `?hostId=${encodeURIComponent(hostId)}` : '';
+      setDockerImages(await api(`/api/docker/images${q}`));
+    } catch (e: any) { showError(e.message); }
+  }, []);
+
+  const loadPodmanImages = useCallback(async (hostId?: string) => {
+    try {
+      const q = hostId ? `?hostId=${encodeURIComponent(hostId)}` : '';
+      setPodmanImages(await api(`/api/podman/images${q}`));
+    } catch (e: any) { showError(e.message); }
+  }, []);
+
+  const loadPoolFiles = useCallback(async (poolId: string, path: string) => {
+    try {
+      const q = `?path=${encodeURIComponent(path)}`;
+      const f = await api(`/api/storage-pools/${poolId}/files${q}`);
+      setPoolFiles(f); setPoolFilePath(path);
+    } catch (e: any) { showError(e.message); }
+  }, []);
+
+  const handleImageHostChange = (hostId: string) => {
+    setImageHostFilter(hostId);
+    if (imageTab === 'docker') loadDockerImages(hostId || undefined);
+    if (imageTab === 'podman') loadPodmanImages(hostId || undefined);
+  };
 
   const loadDisks = useCallback(async (hostId: string) => {
     try {
@@ -722,6 +843,7 @@ export default function App() {
       case 'vms': loadHosts(); break;
       case 'podman': loadHosts(); break;
       case 'storage': loadStorage(); loadHosts(); break;
+      case 'images': loadHosts(); loadStorage(); loadDockerImages(imageHostFilter || undefined); loadPodmanImages(imageHostFilter || undefined); break;
       case 'passthrough': loadPassthrough(); loadHosts(); break;
       case 'files': loadFiles('/'); break;
       case 'users': loadUsers(); break;
@@ -945,7 +1067,12 @@ export default function App() {
       loadFiles(f.path);
     } else {
       try {
-        if (selectedHost === 'local-docker' && containerMode && selectedContainer) {
+        if (selectedStoragePool) {
+          const data = await api(`/api/storage-pools/${selectedStoragePool}/files/read?path=${encodeURIComponent(f.path)}`);
+          setSelectedFile(f.path);
+          setFileContent(data.content);
+          setEditingFile(true);
+        } else if (selectedHost === 'local-docker' && containerMode && selectedContainer) {
           const data = await api(`/api/files/docker/container/local/read?path=${encodeURIComponent(f.path)}&container=${encodeURIComponent(selectedContainer)}`);
           setSelectedFile(f.path);
           setFileContent(data.content);
@@ -973,7 +1100,9 @@ export default function App() {
 
   const saveFile = async () => {
     try {
-      if (selectedHost === 'local-docker' && containerMode && selectedContainer) {
+      if (selectedStoragePool) {
+        await api(`/api/storage-pools/${selectedStoragePool}/files/save`, { method: 'POST', body: JSON.stringify({ path: selectedFile, content: fileContent }) });
+      } else if (selectedHost === 'local-docker' && containerMode && selectedContainer) {
         await api('/api/files/docker/container/local/save', { method: 'POST', body: JSON.stringify({ path: selectedFile, content: fileContent, container: selectedContainer }) });
       } else if (selectedHost === 'local-docker' && !containerMode) {
         await api('/api/files/host/local/save', { method: 'POST', body: JSON.stringify({ path: selectedFile, content: fileContent }) });
@@ -991,7 +1120,9 @@ export default function App() {
   const deleteFile = async (path: string) => {
     if (!confirm(t.confirm)) return;
     try {
-      if (selectedHost === 'local-docker' && containerMode && selectedContainer) {
+      if (selectedStoragePool) {
+        await api(`/api/storage-pools/${selectedStoragePool}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      } else if (selectedHost === 'local-docker' && containerMode && selectedContainer) {
         await api(`/api/files/docker/container/local?path=${encodeURIComponent(path)}&container=${encodeURIComponent(selectedContainer)}`, { method: 'DELETE' });
       } else if (selectedHost === 'local-docker' && !containerMode) {
         await api(`/api/files/host/local?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
@@ -1013,6 +1144,7 @@ export default function App() {
     setDockerContainers([]);
     setFilePath('/');
     setEditingFile(false);
+    setSelectedStoragePool('');
 
     if (hostId === 'local-docker') {
       // Docker-Container des verbundenen Docker-Daemons laden (docker.sock)
@@ -1037,6 +1169,120 @@ export default function App() {
     } else {
       setContainerMode(false);
       loadFiles('/', selectedHost, '', false);
+    }
+  };
+
+  const pullImage = async () => {
+    if (!imagePullName) return;
+    try {
+      const isPodman = imageTab === 'podman';
+      const endpoint = isPodman ? '/api/podman/images/pull' : '/api/docker/images/pull';
+      await api(endpoint, { method: 'POST', body: JSON.stringify({ image: imagePullName, hostId: imageHostFilter || undefined }) });
+      showSuccess(t.success);
+      setModal(null);
+      setImagePullName('');
+      if (isPodman) loadPodmanImages(imageHostFilter || undefined); else loadDockerImages(imageHostFilter || undefined);
+    } catch (e: any) { showError(e.message); }
+  };
+
+  const deleteImage = async (img: any) => {
+    if (!confirm(`${t.deleteImage}: ${img.name}`)) return;
+    try {
+      const isPodman = img.type === 'podman';
+      const endpoint = isPodman ? `/api/podman/images/${encodeURIComponent(img.name)}` : `/api/docker/images/${encodeURIComponent(img.name)}`;
+      await api(`${endpoint}?hostId=${imageHostFilter ? encodeURIComponent(imageHostFilter) : ''}`, { method: 'DELETE' });
+      showSuccess(t.success);
+      if (isPodman) loadPodmanImages(imageHostFilter || undefined); else loadDockerImages(imageHostFilter || undefined);
+    } catch (e: any) { showError(e.message); }
+  };
+
+  const deletePoolFile = async (p: string) => {
+    if (!imagePoolId) return;
+    if (!confirm(t.confirm)) return;
+    try {
+      await api(`/api/storage-pools/${imagePoolId}/files?path=${encodeURIComponent(p)}`, { method: 'DELETE' });
+      showSuccess(t.success);
+      loadPoolFiles(imagePoolId, poolFilePath);
+    } catch (e: any) { showError(e.message); }
+  };
+
+  const handleImagePoolChange = (poolId: string) => {
+    setImagePoolId(poolId);
+    setPoolFilePath('');
+    if (poolId) loadPoolFiles(poolId, '');
+  };
+
+  const handlePoolFileOpen = async (f: any) => {
+    if (f.isDirectory) {
+      loadPoolFiles(imagePoolId, f.path);
+    } else {
+      try {
+        const data = await api(`/api/storage-pools/${imagePoolId}/files/read?path=${encodeURIComponent(f.path)}`);
+        setForm({ poolFile: { ...f, content: data.content ?? '' }, action: 'edit' });
+        setModal('poolFile');
+      } catch (e: any) { showError(e.message); }
+    }
+  };
+
+  const savePoolFile = async () => {
+    if (!imagePoolId) return;
+    try {
+      await api(`/api/storage-pools/${imagePoolId}/files/save`, { method: 'POST', body: JSON.stringify({ path: form.poolFile.path, content: form.poolFile.content }) });
+      showSuccess(t.success);
+      setModal(null);
+      loadPoolFiles(imagePoolId, poolFilePath);
+    } catch (e: any) { showError(e.message); }
+  };
+
+  const downloadToPool = async () => {
+    if (!imagePoolId || !downloadUrl) return;
+    try {
+      await api(`/api/storage-pools/${imagePoolId}/files/download`, { method: 'POST', body: JSON.stringify({ url: downloadUrl, filename: downloadFilename || undefined, path: poolFilePath }) });
+      showSuccess(t.success);
+      setModal(null);
+      setDownloadUrl('');
+      setDownloadFilename('');
+      loadPoolFiles(imagePoolId, poolFilePath);
+    } catch (e: any) { showError(e.message); }
+  };
+
+  const handlePoolUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!imagePoolId || !e.target.files || e.target.files.length === 0) return;
+    try {
+      const fd = new FormData();
+      fd.append('file', e.target.files[0]);
+      fd.append('path', poolFilePath);
+      await fetch(`/api/storage-pools/${imagePoolId}/files/upload`, { method: 'POST', credentials: 'include', body: fd });
+      showSuccess(t.success);
+      loadPoolFiles(imagePoolId, poolFilePath);
+    } catch (err: any) { showError(err.message || String(err)); }
+    e.target.value = '';
+  };
+
+  const createPoolFolder = async () => {
+    if (!imagePoolId) return;
+    const name = prompt(t.newFolder);
+    if (!name) return;
+    try {
+      await api(`/api/storage-pools/${imagePoolId}/files/mkdir`, { method: 'POST', body: JSON.stringify({ path: `${poolFilePath ? poolFilePath + '/' : ''}${name}` }) });
+      showSuccess(t.success);
+      loadPoolFiles(imagePoolId, poolFilePath);
+    } catch (e: any) { showError(e.message); }
+  };
+
+  const downloadPoolFile = (p: string) => {
+    if (!imagePoolId) return;
+    window.open(`/api/storage-pools/${imagePoolId}/files/download?path=${encodeURIComponent(p)}&direct=1`, '_blank');
+  };
+
+  const handleStoragePoolChange = (poolId: string) => {
+    setSelectedStoragePool(poolId);
+    setEditingFile(false);
+    if (poolId) {
+      const q = `?path=${encodeURIComponent('/')}`;
+      api(`/api/storage-pools/${poolId}/files${q}`).then((f) => { setFiles(f); setFilePath('/'); }).catch((e: any) => showError(e.message));
+    } else {
+      loadFiles('/', selectedHost, selectedContainer, containerMode);
     }
   };
 
@@ -1103,6 +1349,7 @@ export default function App() {
               { id: 'vms', label: t.virtualMachines, icon: Monitor },
               { id: 'podman', label: t.podmanTab, icon: Layers },
               { id: 'storage', label: t.storage, icon: HardDrive },
+              { id: 'images', label: t.images, icon: ImageIcon },
               { id: 'passthrough', label: t.passthrough, icon: Layers },
               { id: 'files', label: t.files, icon: Folder },
               { id: 'users', label: t.users, icon: Users },
@@ -1148,6 +1395,7 @@ export default function App() {
               vms: t.virtualMachines,
               podman: t.podmanTab,
               storage: t.storage,
+              images: t.images,
               passthrough: t.passthrough,
               files: t.files,
               users: t.users,
@@ -1501,6 +1749,188 @@ export default function App() {
             </div>
           )}
 
+          {/* ===== IMAGES ===== */}
+          {activeTab === 'images' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center flex-wrap gap-2">
+                <h3 className="text-lg font-semibold">{t.imagesManage}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Sub-Tabs */}
+                  <div className={`flex rounded-lg border overflow-hidden ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
+                    {([
+                      { id: 'docker', label: t.dockerImages, icon: Box },
+                      { id: 'podman', label: t.podmanImages, icon: Layers },
+                      { id: 'iso', label: t.isoImages, icon: ImageIcon },
+                      { id: 'lxc', label: t.lxcTemplates, icon: PackageOpen },
+                    ] as { id: ImageTab; label: string; icon: any }[]).map((tb) => {
+                      const TB = tb.icon;
+                      return (
+                        <button key={tb.id} onClick={() => {
+                          setImageTab(tb.id);
+                          if (tb.id === 'docker') loadDockerImages(imageHostFilter || undefined);
+                          if (tb.id === 'podman') loadPodmanImages(imageHostFilter || undefined);
+                        }}
+                          className={`px-3 py-1.5 text-sm font-medium flex items-center gap-1.5 transition ${
+                            imageTab === tb.id
+                              ? 'bg-gradient-to-r from-gate-orange to-gate-purple text-white'
+                              : darkMode ? 'hover:bg-gray-800 text-gray-300' : 'hover:bg-gray-100 text-gray-600'
+                          }`}>
+                          <TB className="w-3.5 h-3.5" />{tb.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Btn onClick={() => {
+                    if (imageTab === 'docker') loadDockerImages(imageHostFilter || undefined);
+                    if (imageTab === 'podman') loadPodmanImages(imageHostFilter || undefined);
+                    if (imagePoolId) loadPoolFiles(imagePoolId, poolFilePath);
+                  }} variant="ghost"><RefreshCw className="w-4 h-4" /></Btn>
+                </div>
+              </div>
+
+              {/* Docker / Podman Images */}
+              {imageTab === 'docker' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={imageHostFilter}
+                      onChange={(e) => handleImageHostChange(e.target.value)}
+                      className={`px-3 py-1.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-gate-orange ${
+                        darkMode ? 'bg-slate-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    >
+                      <option value="">{t.thisHost} (🐳)</option>
+                      {hosts.filter((h) => !h.isLocal).map((h) => <option key={h.id} value={h.id}>{h.name} ({h.ip})</option>)}
+                    </select>
+                    <Btn onClick={() => { setImagePullName(''); setModal('imagePull'); }}><DownloadCloud className="w-4 h-4" />{t.pullImage}</Btn>
+                  </div>
+                  <div className={cardClass}>
+                    <h4 className="font-semibold mb-3">{t.dockerImages} ({dockerImages.length})</h4>
+                    <DataTable darkMode={darkMode} empty={t.noImagesFound} columns={[
+                      { key: 'name', label: t.repository, render: (r: any) => <span className="font-mono text-xs">{r.name}</span> },
+                      { key: 'id', label: t.imageId, render: (r: any) => <span className="font-mono text-xs text-gray-400">{r.id}</span> },
+                      { key: 'size', label: t.imageSize, render: (r: any) => <span className="text-xs">{r.size}</span> },
+                      { key: 'created', label: t.createdAt, render: (r: any) => <span className="text-xs text-gray-400">{r.created}</span> },
+                      { key: 'actions', label: t.actions, render: (r: any) => (
+                        <button onClick={() => deleteImage(r)} className="p-1.5 rounded hover:bg-red-500/20 text-red-400" title={t.deleteImage}><Trash2 className="w-3.5 h-3.5" /></button>
+                      )},
+                    ]} rows={dockerImages} />
+                  </div>
+                </div>
+              )}
+
+              {imageTab === 'podman' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={imageHostFilter}
+                      onChange={(e) => handleImageHostChange(e.target.value)}
+                      className={`px-3 py-1.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-gate-orange ${
+                        darkMode ? 'bg-slate-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    >
+                      <option value="">{t.thisHost}</option>
+                      {hosts.filter((h) => !h.isLocal).map((h) => <option key={h.id} value={h.id}>{h.name} ({h.ip})</option>)}
+                    </select>
+                    <Btn onClick={() => { setImagePullName(''); setModal('imagePull'); }}><DownloadCloud className="w-4 h-4" />{t.pullImage}</Btn>
+                  </div>
+                  <div className={cardClass}>
+                    <h4 className="font-semibold mb-3">{t.podmanImages} ({podmanImages.length})</h4>
+                    <DataTable darkMode={darkMode} empty={t.noImagesFound} columns={[
+                      { key: 'name', label: t.repository, render: (r: any) => <span className="font-mono text-xs">{r.name}</span> },
+                      { key: 'id', label: t.imageId, render: (r: any) => <span className="font-mono text-xs text-gray-400">{r.id}</span> },
+                      { key: 'size', label: t.imageSize, render: (r: any) => <span className="text-xs">{r.size}</span> },
+                      { key: 'created', label: t.createdAt, render: (r: any) => <span className="text-xs text-gray-400">{r.created}</span> },
+                      { key: 'actions', label: t.actions, render: (r: any) => (
+                        <button onClick={() => deleteImage(r)} className="p-1.5 rounded hover:bg-red-500/20 text-red-400" title={t.deleteImage}><Trash2 className="w-3.5 h-3.5" /></button>
+                      )},
+                    ]} rows={podmanImages} />
+                  </div>
+                </div>
+              )}
+
+              {/* ISO / LXC Templates via Storage Pools */}
+              {(imageTab === 'iso' || imageTab === 'lxc') && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={imagePoolId}
+                      onChange={(e) => handleImagePoolChange(e.target.value)}
+                      className={`px-3 py-1.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-gate-orange ${
+                        darkMode ? 'bg-slate-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    >
+                      <option value="">{t.selectImagePool}…</option>
+                      {storagePools
+                        .filter((p) => (imageTab === 'iso' ? p.type === 'ISO' : p.type === 'LXC_TEMPLATE' || p.type === 'LXC'))
+                        .map((p) => <option key={p.id} value={p.id}>{p.name} ({p.path})</option>)}
+                    </select>
+                    <Btn onClick={() => { setDownloadUrl(''); setDownloadFilename(''); setModal('imageDownload'); }} disabled={!imagePoolId}><Download className="w-4 h-4" />{t.downloadToPool}</Btn>
+                    <label className="cursor-pointer">
+                      <input type="file" className="hidden" disabled={!imagePoolId} onChange={handlePoolUpload} />
+                      <Btn onClick={() => { /* handled by label */ }} disabled={!imagePoolId}><Upload className="w-4 h-4" />{t.uploadToPool}</Btn>
+                    </label>
+                  </div>
+
+                  {storagePools.filter((p) => (imageTab === 'iso' ? p.type === 'ISO' : p.type === 'LXC_TEMPLATE' || p.type === 'LXC')).length === 0 && (
+                    <div className={cardClass}>
+                      <p className="text-sm text-gray-500">{t.noStoragePools}</p>
+                    </div>
+                  )}
+
+                  {imagePoolId && (
+                    <div className={cardClass}>
+                      <div className="flex items-center gap-3 mb-3">
+                        <h4 className="font-semibold">{t.filesInPool}</h4>
+                        <span className="text-xs text-gray-400 font-mono">{poolFilePath || '/'}</span>
+                        {poolFilePath && (
+                          <Btn onClick={() => loadPoolFiles(imagePoolId, '')} variant="ghost" className="px-2 py-1 text-xs">↑ Up</Btn>
+                        )}
+                      </div>
+                      <DataTable darkMode={darkMode} empty={t.noData} columns={[
+                        { key: 'name', label: t.name, render: (r: any) => (
+                          <button onClick={() => handlePoolFileOpen(r)} className="flex items-center gap-2 hover:text-gate-orange">
+                            {r.isDirectory ? <Folder className="w-4 h-4 text-gate-purple" /> : <FileArchive className="w-4 h-4 text-gray-400" />}
+                            {r.name}
+                          </button>
+                        )},
+                        { key: 'type', label: t.type, render: (r: any) => r.isDirectory ? 'DIR' : 'FILE' },
+                        { key: 'actions', label: t.actions, render: (r: any) => (
+                          <div className="flex items-center gap-1">
+                            {!r.isDirectory && <button onClick={() => downloadPoolFile(r.path)} className="p-1.5 rounded hover:bg-blue-500/20 text-blue-400"><Download className="w-3.5 h-3.5" /></button>}
+                            <button onClick={() => deletePoolFile(r.path)} className="p-1.5 rounded hover:bg-red-500/20 text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
+                        )},
+                      ]} rows={poolFiles} />
+                    </div>
+                  )}
+
+                  {/* Eingebaute Templates */}
+                  {imageTab === 'lxc' && templates.lxcTemplates?.length > 0 && (
+                    <div className={cardClass}>
+                      <h4 className="font-semibold mb-3">{t.lxcTemplates} (gatecore-intern)</h4>
+                      <DataTable darkMode={darkMode} empty={t.noData} columns={[
+                        { key: 'name', label: t.name, render: (r: any) => <span className="font-mono text-xs">{r.name}</span> },
+                        { key: 'path', label: t.path, render: (r: any) => <span className="text-xs text-gray-400">{r.path}</span> },
+                        { key: 'size', label: t.imageSize, render: (r: any) => <span className="text-xs">{r.size || '—'}</span> },
+                      ]} rows={templates.lxcTemplates} />
+                    </div>
+                  )}
+                  {imageTab === 'iso' && templates.isoImages?.length > 0 && (
+                    <div className={cardClass}>
+                      <h4 className="font-semibold mb-3">{t.isoImages} (gatecore-intern)</h4>
+                      <DataTable darkMode={darkMode} empty={t.noData} columns={[
+                        { key: 'name', label: t.name, render: (r: any) => <span className="font-mono text-xs">{r.name}</span> },
+                        { key: 'path', label: t.path, render: (r: any) => <span className="text-xs text-gray-400">{r.path}</span> },
+                        { key: 'size', label: t.imageSize, render: (r: any) => <span className="text-xs">{r.size || '—'}</span> },
+                      ]} rows={templates.isoImages} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ===== PASSTHROUGH ===== */}
           {activeTab === 'passthrough' && (
             <div className="space-y-6">
@@ -1599,7 +2029,17 @@ export default function App() {
             <div className="space-y-6">
               <div className="flex justify-between items-center flex-wrap gap-2">
                 <h3 className="text-lg font-semibold">{t.files}</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={imagePoolId}
+                    onChange={(e) => handleImagePoolChange(e.target.value)}
+                    className={`px-3 py-1.5 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-gate-orange ${
+                      darkMode ? 'bg-slate-900 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                  >
+                    <option value="">{t.selectStoragePool}…</option>
+                    {storagePools.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.type})</option>)}
+                  </select>
                   <select
                     value={selectedHost}
                     onChange={(e) => handleHostChange(e.target.value)}
@@ -1623,9 +2063,9 @@ export default function App() {
                       {(selectedHost === 'local-docker' ? localDockerContainers : dockerContainers).map((c) => <option key={c.name} value={c.name}>📦 {c.name} ({c.image})</option>)}
                     </select>
                   )}
-                  <span className="text-xs text-gray-400 font-mono">{filePath}</span>
-                  <Btn onClick={() => loadFiles(filePath)} variant="ghost"><RefreshCw className="w-4 h-4" /></Btn>
-                  {filePath !== '/' && (
+                  <span className="text-xs text-gray-400 font-mono">{imagePoolId ? poolFilePath : filePath}</span>
+                  <Btn onClick={() => { if (imagePoolId) loadPoolFiles(imagePoolId, poolFilePath); else loadFiles(filePath); }} variant="ghost"><RefreshCw className="w-4 h-4" /></Btn>
+                  {!imagePoolId && filePath !== '/' && (
                     <Btn onClick={() => {
                       const parent = filePath.replace(/\/[^/]+\/?$/, '') || '/';
                       loadFiles(parent);
@@ -1633,7 +2073,43 @@ export default function App() {
                   )}
                 </div>
               </div>
-              {editingFile ? (
+              {imagePoolId && (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Btn onClick={() => { setDownloadUrl(''); setDownloadFilename(''); setModal('imageDownload'); }}><Download className="w-4 h-4" />{t.downloadToPool}</Btn>
+                    <label className="cursor-pointer">
+                      <input type="file" className="hidden" onChange={handlePoolUpload} />
+                      <Btn onClick={() => { /* handled by label */ }}><Upload className="w-4 h-4" />{t.uploadToPool}</Btn>
+                    </label>
+                    <Btn onClick={() => createPoolFolder()}><FolderPlus className="w-4 h-4" />{t.newFolder}</Btn>
+                  </div>
+                  <div className={cardClass}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <h4 className="font-semibold">{t.filesInPool}</h4>
+                      <span className="text-xs text-gray-400 font-mono">{poolFilePath || '/'}</span>
+                      {poolFilePath && (
+                        <Btn onClick={() => loadPoolFiles(imagePoolId, '')} variant="ghost" className="px-2 py-1 text-xs">↑ Up</Btn>
+                      )}
+                    </div>
+                    <DataTable darkMode={darkMode} empty={t.noData} columns={[
+                      { key: 'name', label: t.name, render: (r: any) => (
+                        <button onClick={() => handlePoolFileOpen(r)} className="flex items-center gap-2 hover:text-gate-orange">
+                          {r.isDirectory ? <Folder className="w-4 h-4 text-gate-purple" /> : <FileArchive className="w-4 h-4 text-gray-400" />}
+                          {r.name}
+                        </button>
+                      )},
+                      { key: 'type', label: t.type, render: (r: any) => r.isDirectory ? 'DIR' : 'FILE' },
+                      { key: 'actions', label: t.actions, render: (r: any) => (
+                        <div className="flex items-center gap-1">
+                          {!r.isDirectory && <button onClick={() => downloadPoolFile(r.path)} className="p-1.5 rounded hover:bg-blue-500/20 text-blue-400"><Download className="w-3.5 h-3.5" /></button>}
+                          <button onClick={() => deletePoolFile(r.path)} className="p-1.5 rounded hover:bg-red-500/20 text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      )},
+                    ]} rows={poolFiles} />
+                  </div>
+                </>
+              )}
+              {!imagePoolId && editingFile ? (
                 <div className={cardClass}>
                   <div className="flex justify-between items-center mb-3">
                     <p className="text-sm font-mono text-gray-400">{selectedFile}</p>
@@ -2039,6 +2515,30 @@ export default function App() {
         </Select>
         <Input label={t.path} darkMode={darkMode} value={form.path || ''} onChange={(e: any) => setF('path', e.target.value)} placeholder="/var/lib/gatecore/iso" />
         <div className="flex gap-2 mt-4"><Btn onClick={submitForm} disabled={loading}>{loading ? t.loading : t.create}</Btn><Btn onClick={() => setModal(null)} variant="ghost">{t.cancel}</Btn></div>
+      </Modal>
+
+      {/* Image Pull */}
+      <Modal open={modal === 'imagePull'} onClose={() => setModal(null)} title={t.pullImage} darkMode={darkMode}>
+        <Input label={t.imageName} darkMode={darkMode} value={imagePullName} onChange={(e: any) => setImagePullName(e.target.value)} placeholder={imageTab === 'podman' ? 'quay.io/org/image:tag' : 'docker.io/library/alpine:latest'} />
+        <div className="flex gap-2 mt-4"><Btn onClick={pullImage} disabled={loading || !imagePullName}>{loading ? t.loading : t.pull}</Btn><Btn onClick={() => setModal(null)} variant="ghost">{t.cancel}</Btn></div>
+      </Modal>
+
+      {/* Download to Storage Pool */}
+      <Modal open={modal === 'imageDownload'} onClose={() => setModal(null)} title={t.downloadToPool} darkMode={darkMode}>
+        <Input label={t.downloadUrl} darkMode={darkMode} value={downloadUrl} onChange={(e: any) => setDownloadUrl(e.target.value)} placeholder="https://releases.ubuntu.com/24.04/ubuntu-24.04-desktop-amd64.iso" />
+        <Input label={t.fileName} darkMode={darkMode} value={downloadFilename} onChange={(e: any) => setDownloadFilename(e.target.value)} placeholder={t.optional} />
+        <div className="flex gap-2 mt-4"><Btn onClick={downloadToPool} disabled={loading || !downloadUrl}>{loading ? t.loading : t.download}</Btn><Btn onClick={() => setModal(null)} variant="ghost">{t.cancel}</Btn></div>
+      </Modal>
+
+      {/* Pool File Editor */}
+      <Modal open={modal === 'poolFile'} onClose={() => setModal(null)} title={form.poolFile?.name || t.edit} darkMode={darkMode}>
+        <textarea
+          value={form.poolFile?.content || ''}
+          onChange={(e: any) => setForm((p: any) => ({ ...p, poolFile: { ...p.poolFile, content: e.target.value } }))}
+          rows={18}
+          className={`w-full px-3 py-2 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gate-orange ${darkMode ? 'bg-slate-900 border-gray-700 text-white' : 'bg-white border-gray-300'}`}
+        />
+        <div className="flex gap-2 mt-4"><Btn onClick={savePoolFile} disabled={loading}>{loading ? t.loading : t.save}</Btn><Btn onClick={() => setModal(null)} variant="ghost">{t.cancel}</Btn></div>
       </Modal>
 
       {/* Format Disk */}

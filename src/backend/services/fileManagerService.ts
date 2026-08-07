@@ -96,6 +96,60 @@ export class FileManagerService {
   }
 
   /**
+   * Storage-Pool Dateisystem verwalten (Dateien innerhalb eines Speicher-Pools)
+   */
+  public static async listStoragePoolFiles(poolId: string, subPath: string) {
+    const pool = await prisma.storagePool.findUnique({ where: { id: poolId }, include: { host: true } });
+    if (!pool) throw new Error('Storage pool not found');
+    const fullPath = path.join(pool.path, subPath || '');
+    return this.listHostFiles(fullPath, this.poolHostId(pool));
+  }
+
+  public static async readStoragePoolFile(poolId: string, subPath: string) {
+    const pool = await prisma.storagePool.findUnique({ where: { id: poolId }, include: { host: true } });
+    if (!pool) throw new Error('Storage pool not found');
+    const fullPath = path.join(pool.path, subPath || '');
+    return this.readFileContent(fullPath, this.poolHostId(pool));
+  }
+
+  public static async saveStoragePoolFile(poolId: string, subPath: string, content: string) {
+    const pool = await prisma.storagePool.findUnique({ where: { id: poolId }, include: { host: true } });
+    if (!pool) throw new Error('Storage pool not found');
+    const fullPath = path.join(pool.path, subPath || '');
+    return this.saveFileContent(fullPath, content, this.poolHostId(pool));
+  }
+
+  public static async createStoragePoolFolder(poolId: string, subPath: string) {
+    const pool = await prisma.storagePool.findUnique({ where: { id: poolId }, include: { host: true } });
+    if (!pool) throw new Error('Storage pool not found');
+    const fullPath = path.join(pool.path, subPath || '');
+    const hostId = this.poolHostId(pool);
+    if (hostId) {
+      const host = await prisma.host.findUnique({ where: { id: hostId } });
+      if (!host || !host.sshKeyPath) throw new Error('Host not found or SSH key missing');
+      await SSHService.executeCommand(host.ip, `mkdir -p ${JSON.stringify(fullPath)}`, host.sshKeyPath);
+    } else {
+      fs.mkdirSync(fullPath, { recursive: true });
+    }
+    return { success: true };
+  }
+
+  public static async deleteStoragePoolFile(poolId: string, subPath: string) {
+    const pool = await prisma.storagePool.findUnique({ where: { id: poolId }, include: { host: true } });
+    if (!pool) throw new Error('Storage pool not found');
+    const fullPath = path.join(pool.path, subPath || '');
+    return this.deleteHostFile(fullPath, this.poolHostId(pool));
+  }
+
+  /** Lokale Pools (Panel-Rechner) werden ohne SSH direkt via Dateisystem bearbeitet */
+  private static poolHostId(pool: any): string | undefined {
+    const h = pool.host;
+    if (!h) return undefined;
+    if (h.isLocal || h.ip === '127.0.0.1' || !h.sshKeyPath) return undefined;
+    return pool.hostId;
+  }
+
+  /**
    * Host-Dateisystem auf dem Docker-Rechner verwalten
    * Nutzt einen schlanken Agent-Container (gatecore-host-access), der "/" des Hosts rw mountet.
    */

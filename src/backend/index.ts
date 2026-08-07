@@ -14,6 +14,9 @@ import { FileManagerService } from './services/fileManagerService';
 import { LDAPService } from './services/ldapService';
 import { MonitoringService } from './services/monitoringService';
 import { ApiKeyService } from './services/apiKeyService';
+import multer from 'multer';
+
+const upload = multer({ dest: '/tmp/gatecore-uploads' });
 
 const { app } = expressWs(express());
 const prisma = new PrismaClient();
@@ -186,6 +189,16 @@ async function dockerHost(): Promise<any | null> {
 
 /** Führt einen Docker-Befehl auf dem gewählten Host aus (lokal via Unix-Socket, remote per SSH). */
 async function runDockerCmd(hostId: string | undefined, cmd: string): Promise<string> {
+  const host = hostId ? await prisma.host.findUnique({ where: { id: hostId } }) : await dockerHost();
+  if (!host || host.isLocal || !host.sshKeyPath || host.ip === '127.0.0.1') {
+    const { execSync } = require('child_process');
+    return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+  }
+  return await SSHService.executeCommand(host.ip, cmd, host.sshKeyPath);
+}
+
+/** Führt einen beliebigen Befehl auf einem Host aus (lokal via exec, remote per SSH). */
+async function runCmd(hostId: string | undefined, cmd: string): Promise<string> {
   const host = hostId ? await prisma.host.findUnique({ where: { id: hostId } }) : await dockerHost();
   if (!host || host.isLocal || !host.sshKeyPath || host.ip === '127.0.0.1') {
     const { execSync } = require('child_process');
@@ -613,6 +626,209 @@ app.post('/api/storage-pools', async (req, res) => {
 app.delete('/api/storage-pools/:id', async (req, res) => {
   try {
     await prisma.storagePool.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- STORAGE POOL FILE MANAGER (Dateien innerhalb eines Speicher-Pools) ---
+app.get('/api/storage-pools/:id/files', async (req, res) => {
+  try {
+    const subPath = (req.query.path as string) || '';
+    const files = await FileManagerService.listStoragePoolFiles(req.params.id, subPath);
+    res.json(files);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/storage-pools/:id/files/read', async (req, res) => {
+  try {
+    const filePath = (req.query.path as string) || '';
+    const content = await FileManagerService.readStoragePoolFile(req.params.id, filePath);
+    res.json({ content });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/storage-pools/:id/files/save', async (req, res) => {
+  try {
+    const { path: filePath, content } = req.body;
+    const result = await FileManagerService.saveStoragePoolFile(req.params.id, filePath || '', content);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/storage-pools/:id/files', async (req, res) => {
+  try {
+    const filePath = (req.query.path as string) || '';
+    const result = await FileManagerService.deleteStoragePoolFile(req.params.id, filePath);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/storage-pools/:id/files/mkdir', async (req, res) => {
+  try {
+    const { path: dirPath } = req.body;
+    if (!dirPath) return res.status(400).json({ error: 'Path required' });
+    const result = await FileManagerService.createStoragePoolFolder(req.params.id, dirPath);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Datei in einen Storage-Pool hochladen (ISO/Template/Compose etc.)
+app.post('/api/storage-pools/:id/files/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const pool = await prisma.storagePool.findUnique({ where: { id: req.params.id }, include: { host: true } });
+    if (!pool) return res.status(404).json({ error: 'Storage pool not found' });
+
+    const subDir = (req.body.path as string) || '';
+    const targetDir = path.join(pool.path, subDir);
+    const targetFile = path.join(targetDir, path.basename(req.file.originalname));
+
+    const host = pool.host;
+    const isLocal = !host || host.isLocal || host.ip === '127.0.0.1' || !host.sshKeyPath;
+    if (isLocal) {
+      fs.mkdirSync(targetDir, { recursive: true });
+      fs.copyFileSync(req.file.path, targetFile);
+    } else {
+      // Remote per SSH: Datei als base64 übertragen
+      const b64 = fs.readFileSync(req.file.path).toString('base64');
+      await SSHService.executeCommand(
+        host.ip,
+        `mkdir -p ${JSON.stringify(targetDir)} && echo ${b64} | base64 -d > ${JSON.stringify(targetFile)}`,
+        host.sshKeyPath!
+      );
+    }
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, path: targetFile });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Datei per URL in einen Storage-Pool laden (ISO/Template herunterladen)
+app.post('/api/storage-pools/:id/files/download', async (req, res) => {
+  try {
+    const { url, filename } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL required' });
+    const pool = await prisma.storagePool.findUnique({ where: { id: req.params.id }, include: { host: true } });
+    if (!pool) return res.status(404).json({ error: 'Storage pool not found' });
+
+    const targetDir = path.join(pool.path, (req.body.path as string) || '');
+    const targetFile = path.join(targetDir, path.basename(filename || '') || 'downloaded');
+
+    const host = pool.host;
+    const isLocal = !host || host.isLocal || host.ip === '127.0.0.1' || !host.sshKeyPath;
+    const safeUrl = JSON.stringify(url);
+    const cmd = `mkdir -p ${JSON.stringify(targetDir)} && curl -L -o ${JSON.stringify(targetFile)} ${safeUrl} || wget -O ${JSON.stringify(targetFile)} ${safeUrl}`;
+    if (isLocal) {
+      await runCmd(pool.hostId, cmd);
+    } else {
+      await SSHService.executeCommand(host.ip, cmd, host.sshKeyPath!);
+    }
+    res.json({ success: true, path: targetFile });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Datei direkt aus einem Storage-Pool herunterladen (GET für Browser-Download)
+app.get('/api/storage-pools/:id/files/download', async (req, res) => {
+  try {
+    const filePath = (req.query.path as string) || '';
+    const content = await FileManagerService.readStoragePoolFile(req.params.id, filePath);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
+    res.send(Buffer.from(content, 'utf8'));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- DOCKER IMAGES (lokal & remote) ---
+app.get('/api/docker/images', async (req, res) => {
+  try {
+    const hostId = req.query.hostId as string | undefined;
+    const stdout = await runDockerCmd(hostId, `docker images --format '{{.Repository}}:{{.Tag}}\\t{{.ID}}\\t{{.Size}}\\t{{.CreatedSince}}'`);
+    const images = stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line: string) => {
+        const [name, id, size, created] = line.split('\t');
+        return { name, id, size, created, type: 'docker' };
+      });
+    res.json(images);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/docker/images/pull', async (req, res) => {
+  try {
+    const { image, hostId } = req.body;
+    if (!image) return res.status(400).json({ error: 'Image required' });
+    await runDockerCmd(hostId, `docker pull ${JSON.stringify(image)}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/docker/images/:name', async (req, res) => {
+  try {
+    const hostId = req.query.hostId as string | undefined;
+    await runDockerCmd(hostId, `docker rmi -f ${JSON.stringify(req.params.name)}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- PODMAN IMAGES (remote, per SSH) ---
+app.get('/api/podman/images', async (req, res) => {
+  try {
+    const hostId = req.query.hostId as string | undefined;
+    const stdout = await runCmd(hostId, `podman images --format '{{.Repository}}:{{.Tag}}\\t{{.ID}}\\t{{.Size}}\\t{{.CreatedSince}}'`);
+    const images = stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line: string) => {
+        const [name, id, size, created] = line.split('\t');
+        return { name, id, size, created, type: 'podman' };
+      });
+    res.json(images);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/podman/images/pull', async (req, res) => {
+  try {
+    const { image, hostId } = req.body;
+    if (!image) return res.status(400).json({ error: 'Image required' });
+    await runCmd(hostId, `podman pull ${JSON.stringify(image)}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/podman/images/:name', async (req, res) => {
+  try {
+    const hostId = req.query.hostId as string | undefined;
+    await runCmd(hostId, `podman rmi -f ${JSON.stringify(req.params.name)}`);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
